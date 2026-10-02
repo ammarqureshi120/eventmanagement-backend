@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AD-1: Domain references nothing beyond the BCL. -->
+  <PropertyGroup>
+    <RootNamespace>EventHub.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

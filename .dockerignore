@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+**/.vs/
+tests/
+openapi/
+.git/
+*.md

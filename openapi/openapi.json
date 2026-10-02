@@ -1,0 +1,28 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "EventHub.Api | v1",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/auth/antiforgery": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Issues the XSRF-TOKEN cookie the SPA echoes in the X-XSRF-TOKEN header.",
+        "operationId": "GetAntiforgeryToken",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Auth"
+    }
+  ]
+}

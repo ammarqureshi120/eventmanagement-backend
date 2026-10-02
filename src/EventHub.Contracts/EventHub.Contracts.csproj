@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AD-1: Contracts (wire DTOs and enums) references nothing. -->
+  <PropertyGroup>
+    <RootNamespace>EventHub.Contracts</RootNamespace>
+  </PropertyGroup>
+
+</Project>

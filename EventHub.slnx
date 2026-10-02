@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EventHub.Api/EventHub.Api.csproj" />
+    <Project Path="src/EventHub.AppHost/EventHub.AppHost.csproj" />
+    <Project Path="src/EventHub.Application/EventHub.Application.csproj" />
+    <Project Path="src/EventHub.Contracts/EventHub.Contracts.csproj" />
+    <Project Path="src/EventHub.Domain/EventHub.Domain.csproj" />
+    <Project Path="src/EventHub.Infrastructure/EventHub.Infrastructure.csproj" />
+    <Project Path="src/EventHub.ServiceDefaults/EventHub.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EventHub.Api.IntegrationTests/EventHub.Api.IntegrationTests.csproj" />
+    <Project Path="tests/EventHub.Application.Tests/EventHub.Application.Tests.csproj" />
+    <Project Path="tests/EventHub.Domain.Tests/EventHub.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- AD-1: inbound adapter + composition root. Infrastructure is referenced for DI registration only. -->
+  <PropertyGroup>
+    <RootNamespace>EventHub.Api</RootNamespace>
+    <UserSecretsId>eventhub-api-6f0d2c1e</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- AD-4: build-time OpenAPI 3.0 document, committed at backend/openapi/openapi.json. -->
+  <PropertyGroup>
+    <OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>
+    <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/../../openapi</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--openapi-version OpenApi3_0 --file-name openapi</OpenApiGenerateDocumentsOptions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="EventHub.Api.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventHub.Application\EventHub.Application.csproj" />
+    <ProjectReference Include="..\EventHub.Contracts\EventHub.Contracts.csproj" />
+    <ProjectReference Include="..\EventHub.Infrastructure\EventHub.Infrastructure.csproj" />
+    <ProjectReference Include="..\EventHub.ServiceDefaults\EventHub.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+  </ItemGroup>
+
+</Project>

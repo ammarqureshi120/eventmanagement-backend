@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AD-1: Application references Domain and Contracts only. -->
+  <PropertyGroup>
+    <RootNamespace>EventHub.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EventHub.Domain\EventHub.Domain.csproj" />
+    <ProjectReference Include="..\EventHub.Contracts\EventHub.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mediator.Abstractions" />
+  </ItemGroup>
+
+</Project>
