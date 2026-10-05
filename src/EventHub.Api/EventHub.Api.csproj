@@ -13,9 +13,15 @@
     <OpenApiGenerateDocumentsOptions>--openapi-version OpenApi3_0 --file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
 
-  <ItemGroup>
-    <InternalsVisibleTo Include="EventHub.Api.IntegrationTests" />
-  </ItemGroup>
+  <!-- MSG0005: notifications may have no handler yet (DomainEventNotification until the first domain-event handler). -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);MSG0005</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    No InternalsVisibleTo: the Api's generated Mediator is internal, and the integration tests generate their own
+    (TestPipeline). With internals visible, both AddMediator extensions would collide in the test assembly.
+  -->
 
   <ItemGroup>
     <ProjectReference Include="..\EventHub.Application\EventHub.Application.csproj" />
@@ -31,6 +37,18 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Scalar.AspNetCore" />
+    <!-- AD-5: source-generated Mediator; the generator runs in the composition root only. -->
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="Mediator.SourceGenerator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <!-- dotnet ef startup project (migrations live in Infrastructure). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
   </ItemGroup>

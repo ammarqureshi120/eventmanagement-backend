@@ -16,6 +16,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
     <!-- Same version EF Core 10.0.12 resolves; used directly by the AppHost DB bootstrap and the test DB fixture. -->
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.6" />
   </ItemGroup>

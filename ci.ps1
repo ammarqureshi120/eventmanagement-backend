@@ -1,7 +1,9 @@
 #!/usr/bin/env pwsh
 # Single CI entry point for eventhub-backend (CI provider wiring is deferred).
-# Runs: restore, build (regenerates openapi/openapi.json), contract drift check, all tests
-# (unit, architecture, integration against a throwaway database on local SQL Server), vulnerable-package audit.
+# Runs: restore, Release build (regenerates openapi/openapi.json), contract drift check, Debug build, all tests
+# from the Debug build (unit, architecture, integration against a throwaway database on local SQL Server; the
+# seed-only test tooling exists only outside Release, and a test checks the Release assemblies lack it),
+# vulnerable-package audit.
 # Requires: .NET SDK 10.0.401, git, local SQL Server 2025 Developer (or EVENTHUB_TEST_SQL). No containers.
 # Database tests fail (not skip) when SQL Server is unreachable; pass -AllowSqlSkip to let them skip.
 #Requires -Version 5.1
@@ -13,6 +15,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location -Path $PSScriptRoot
 
 if ($AllowSqlSkip) { Remove-Item Env:EVENTHUB_REQUIRE_SQL -ErrorAction SilentlyContinue } else { $env:EVENTHUB_REQUIRE_SQL = '1' }
+# SeedToolsReleaseTests reads the Release output built below; fail (not skip) if it is missing.
+$env:EVENTHUB_REQUIRE_RELEASE_BUILD = '1'
 
 function Invoke-Step {
     param([string]$Name, [scriptblock]$Action)
@@ -27,7 +31,7 @@ function Invoke-Step {
 
 Invoke-Step 'restore' { dotnet restore EventHub.slnx }
 
-Invoke-Step 'build (-warnaserror, regenerates openapi.json)' {
+Invoke-Step 'build Release (-warnaserror, regenerates openapi.json)' {
     dotnet build EventHub.slnx --no-restore -c Release -warnaserror
 }
 
@@ -45,8 +49,12 @@ Invoke-Step 'openapi.json drift check' {
     }
 }
 
-Invoke-Step 'test (unit, architecture, integration)' {
-    dotnet test --solution EventHub.slnx --no-build -c Release
+Invoke-Step 'build Debug (-warnaserror, EVENTHUB_SEED_TOOLS defined)' {
+    dotnet build EventHub.slnx --no-restore -c Debug -warnaserror
+}
+
+Invoke-Step 'test (unit, architecture, integration) from the Debug build' {
+    dotnet test --solution EventHub.slnx --no-build -c Debug
 }
 
 Invoke-Step 'vulnerable package audit' {
