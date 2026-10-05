@@ -1,9 +1,14 @@
 using EventHub.Application.Common.Ports;
+using EventHub.Domain.Users;
 using EventHub.Infrastructure.Email;
+using EventHub.Infrastructure.Identity;
+using EventHub.Infrastructure.Ids;
 using EventHub.Infrastructure.Persistence;
 using EventHub.Infrastructure.Persistence.Interceptors;
+using EventHub.Infrastructure.Persistence.Scopes;
 using EventHub.Infrastructure.Time;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,7 +27,7 @@ public static class DependencyInjection
     public const string ReadyTag = "ready";
 
     /// <param name="isDocumentGeneration">
-    /// True under the build-time OpenAPI generator, which boots without a database (AD-4).
+    /// True under the build-time OpenAPI generator, which boots without a database (AD-4): no migrations, no seeding.
     /// </param>
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services, IConfiguration configuration, bool isDocumentGeneration = false)
@@ -37,16 +42,43 @@ public static class DependencyInjection
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IIdGenerator, SequentialGuidGenerator>();
+
+        // AD-7: data scopes. The request scope follows ITenantContext; DbScopeFactory pins child scopes.
+        services.AddScoped<ScopeAccessor>();
+        services.AddSingleton<DbScopeFactory>();
         services.AddScoped<TimestampsInterceptor>();
+        services.AddScoped<RlsSessionContextInterceptor>();
 
         services.AddDbContext<AppDbContext>((sp, options) =>
         {
             options.UseSqlServer(connectionString);
-            options.AddInterceptors(sp.GetRequiredService<TimestampsInterceptor>());
+            // AD-22: these events log the provider exception, whose message can echo row values (an email in a
+            // duplicate-key error). The exception handler logs type, SQL error number and traceId instead.
+            options.ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.SaveChangesFailed, RelationalEventId.CommandError));
+            options.AddInterceptors(
+                sp.GetRequiredService<RlsSessionContextInterceptor>(),
+                sp.GetRequiredService<TimestampsInterceptor>());
         });
+        services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
+
+        // AD-26: Identity for credentials only, over the domain User row. No roles, no claims tables.
+        // Any valid email is a user name (apostrophes, non-ASCII): no character allowlist.
+        services.AddIdentityCore<User>(options => options.User.AllowedUserNameCharacters = string.Empty)
+            .AddUserStore<UserStore>();
+        services.AddScoped<IIdentityAccount, IdentityAccount>();
 
         services.AddOptions<SmtpOptions>()
             .Bind(configuration.GetSection(SmtpOptions.SectionName));
+        services.AddOptions<DatabaseOptions>()
+            .Bind(configuration.GetSection(DatabaseOptions.SectionName));
+
+        if (!isDocumentGeneration)
+        {
+            // Order matters: hosted services start in registration order, so the schema exists before seeding.
+            services.AddHostedService<DatabaseMigrator>();
+            services.AddHostedService<SystemAdministratorSeeder>();
+        }
 
         // AD-21: readiness = database only; SMTP is reported on /health detail only.
         services.AddHealthChecks()

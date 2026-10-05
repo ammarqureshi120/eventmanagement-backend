@@ -9,6 +9,11 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- AD-31: seed-only tooling (IIdentityAccount.SetPasswordForSeedAsync) is compiled out of Release builds. -->
+  <PropertyGroup Condition="'$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);EVENTHUB_SEED_TOOLS</DefineConstants>
+  </PropertyGroup>
+
   <!-- AD-1: the core layers build with warnings as errors. -->
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'EventHub.Domain' Or '$(MSBuildProjectName)' == 'EventHub.Application'">
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
