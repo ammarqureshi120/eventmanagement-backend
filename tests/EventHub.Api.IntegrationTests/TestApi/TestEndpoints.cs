@@ -1,5 +1,6 @@
 using EventHub.Api.Hosting;
 using Mediator;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -21,6 +22,21 @@ public sealed class TestEndpoints : IApiEndpointModule
         test.MapPost("/endless-events", (ISender sender, CancellationToken ct) => Send(sender, new EndlessEventsCommand(), ct));
         test.MapPost("/duplicate-user", (DuplicateUserCommand command, ISender sender, CancellationToken ct) => Send(sender, command, ct));
         test.MapPost("/echo", (EchoCommand command, ISender sender, CancellationToken ct) => Send(sender, command, ct));
+        test.MapPost("/antiforgery", ValidateAntiforgery);
+    }
+
+    /// <summary>AD-21: proves an antiforgery token issued by one host validates on another (shared key ring).</summary>
+    private static async Task<IResult> ValidateAntiforgery(HttpContext context, IAntiforgery antiforgery)
+    {
+        try
+        {
+            await antiforgery.ValidateRequestAsync(context);
+            return TypedResults.NoContent();
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return TypedResults.BadRequest();
+        }
     }
 
     private static async Task<IResult> Send(ISender sender, ICommand<TestOutcome> command, CancellationToken ct) =>

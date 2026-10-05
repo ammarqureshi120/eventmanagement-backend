@@ -9,7 +9,7 @@ namespace EventHub.Api.IntegrationTests.Fixtures;
 
 /// <summary>
 /// AD-31 (no containers): one fresh, uniquely named database per test run on the locally installed
-/// SQL Server, migrated once (both Story 1.3 migrations) and dropped afterwards. Server comes from <c>EVENTHUB_TEST_SQL</c> (any database name in it
+/// SQL Server, migrated once (every migration) and dropped afterwards. Server comes from <c>EVENTHUB_TEST_SQL</c> (any database name in it
 /// is replaced). When SQL Server is unreachable, dependent tests are skipped with the reason, or fail
 /// when <c>EVENTHUB_REQUIRE_SQL=1</c> (set by <c>ci.ps1</c>).
 /// </summary>

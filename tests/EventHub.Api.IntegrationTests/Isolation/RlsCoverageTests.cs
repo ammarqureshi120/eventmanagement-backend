@@ -65,15 +65,84 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
         Assert.False(db.Database.HasPendingModelChanges(), "The model has changes without a migration (AD-30).");
         Assert.Empty(await db.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
-            ["Auth_Users", "Foundation_Rls"],
+            ["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys"],
             (await db.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken)).Select(id => id[15..]));
     }
+
+    [Fact]
+    public async Task Database_WhenMigrated_HasOnlyTheAllowListedGlobalTablesOutsideTheSecurityPolicy()
+    {
+        sql.SkipIfUnavailable();
+
+        // AD-7 / AD-21: a new global (non-RLS) table must be added here on purpose, never by accident.
+        var global = await QueryStrings("""
+            SELECT t.name
+              FROM sys.tables t
+             WHERE t.is_ms_shipped = 0
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM sys.security_predicates p
+                     JOIN sys.security_policies sp ON sp.object_id = p.object_id
+                    WHERE SCHEMA_NAME(sp.schema_id) = N'sec' AND sp.name = N'TenantIsolation'
+                      AND p.target_object_id = t.object_id)
+            """);
+
+        Assert.Equal(
+            ["DataProtectionKeys", "__EFMigrationsHistory"],
+            global.Except(CreatedProbeTables, StringComparer.Ordinal).Order(StringComparer.Ordinal));
+        Assert.Equal(0, await sql.ScalarAsync<int>(
+            DataScope.None, "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.DataProtectionKeys') AND name = N'OrganizationId'"));
+    }
+
+    public static TheoryData<string> AnyScope => ["none", "identity", "platform", "tenant"];
+
+    /// <summary>AD-21: the key ring loads in whatever scope the Data Protection repository's DI scope resolves to.</summary>
+    [Theory]
+    [MemberData(nameof(AnyScope))]
+    public async Task DataProtectionKeys_WhenWrittenAndReadInAnyDataScope_IsVisible(string scopeName)
+    {
+        sql.SkipIfUnavailable();
+        var scope = scopeName switch
+        {
+            "identity" => DataScope.Identity,
+            "platform" => DataScope.Platform,
+            "tenant" => DataScope.Tenant(Guid.NewGuid()),
+            _ => DataScope.None,
+        };
+        var friendlyName = $"rls-probe-{Guid.NewGuid():N}";
+        var ct = TestContext.Current.CancellationToken;
+
+        // The probe row never reaches the shared key ring: the transaction is rolled back.
+        await using var connection = await sql.OpenAsync(scope, ct);
+        await using var transaction = connection.BeginTransaction();
+        await using (var insert = new SqlCommand(
+                         "INSERT INTO dbo.DataProtectionKeys (FriendlyName, Xml) VALUES (@name, N'<probe />')", connection, transaction))
+        {
+            insert.Parameters.AddWithValue("@name", friendlyName);
+            await insert.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var read = new SqlCommand(
+                         "SELECT COUNT(*) FROM dbo.DataProtectionKeys WHERE FriendlyName = @name", connection, transaction))
+        {
+            read.Parameters.AddWithValue("@name", friendlyName);
+            Assert.Equal(1, (int)(await read.ExecuteScalarAsync(ct))!);
+        }
+
+        await transaction.RollbackAsync(ct);
+        Assert.Equal(0, await sql.ScalarAsync<int>(
+            DataScope.None, "SELECT COUNT(*) FROM dbo.DataProtectionKeys WHERE FriendlyName = @name", ("@name", friendlyName)));
+    }
+
+    /// <summary>Exact names of the probe tables created below; only these are excluded from the global allow-list.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentBag<string> CreatedProbeTables = [];
 
     [Fact]
     public async Task AddTenantRls_WhenAppliedToATenantTable_FiltersAndBlocksOtherScopesThenDropsCleanly()
     {
         sql.SkipIfUnavailable();
         var table = $"RlsProbe_{Guid.NewGuid():N}";
+        CreatedProbeTables.Add(table);
         var orgA = Guid.NewGuid();
         var orgB = Guid.NewGuid();
         await sql.ExecuteAsync(DataScope.None, $"CREATE TABLE dbo.[{table}] (Id uniqueidentifier NOT NULL PRIMARY KEY, OrganizationId uniqueidentifier NOT NULL)");
@@ -109,6 +178,8 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
         }
 
         Assert.DoesNotContain(await QueryStrings(PolicyPredicatesSql), p => p.StartsWith(table, StringComparison.Ordinal));
+        Assert.Equal(0, await sql.ScalarAsync<int>(
+            DataScope.None, "SELECT COUNT(*) FROM sys.tables WHERE name = @name", ("@name", table)));
     }
 
     [Theory]
