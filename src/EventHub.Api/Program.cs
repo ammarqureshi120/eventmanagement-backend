@@ -48,6 +48,9 @@ try
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     });
 
+    // AD-22 / NFR4: API security headers (HSTS values come from these options; see SecurityHeaders).
+    builder.Services.AddSecurityHeaders();
+
     var app = builder.Build();
 
     // AD-4: migrations and seeding run as hosted services (DatabaseMigrator, then SystemAdministratorSeeder),
@@ -59,6 +62,9 @@ try
         exception is not null || context.Response.StatusCode >= 500 && !IsHealthPath(context)
             ? LogEventLevel.Error
             : IsHealthPath(context) ? LogEventLevel.Verbose : LogEventLevel.Information);
+
+    // Before the exception handler: the headers are set in OnStarting callbacks, which survive its Response.Clear().
+    app.UseSecurityHeaders();
 
     app.UseExceptionHandler();
     app.UseWhen(

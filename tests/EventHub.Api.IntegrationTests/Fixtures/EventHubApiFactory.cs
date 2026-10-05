@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -8,7 +10,8 @@ namespace EventHub.Api.IntegrationTests.Fixtures;
 /// <summary>
 /// Boots the real API in-process against the test database (or an unreachable one, for DB-free checks).
 /// <list type="bullet">
-/// <item>No database: startup migrations are switched off.</item>
+/// <item>No database: startup migrations are switched off, and Data Protection uses ephemeral keys with an
+/// in-memory key store (test-only), so nothing tries SQL for keys. With a database, keys persist to it.</item>
 /// <item>Seed settings come only from <paramref name="settings"/>; otherwise the seed list is blanked so dev
 /// user-secrets never seed the test database.</item>
 /// <item><paramref name="testApi"/>: swaps in the test-only Mediator, grants, messages and <c>/api/test/*</c>
@@ -38,7 +41,8 @@ public sealed class EventHubApiFactory(
         builder.UseSetting("EventHub:Smtp:Host", string.Empty);
 
         var all = settings ?? new Dictionary<string, string>();
-        if (connectionString is null || connectionString == UnreachableDatabase)
+        var isDatabaseFree = connectionString is null || connectionString == UnreachableDatabase;
+        if (isDatabaseFree)
         {
             builder.UseSetting("EventHub:Database:MigrateOnStartup", "false");
         }
@@ -55,6 +59,13 @@ public sealed class EventHubApiFactory(
 
         builder.ConfigureTestServices(services =>
         {
+            if (isDatabaseFree)
+            {
+                // Test-only: ephemeral keys, and the key-ring preload reads an in-memory store instead of SQL.
+                services.AddDataProtection().UseEphemeralDataProtectionProvider();
+                services.Configure<KeyManagementOptions>(options => options.XmlRepository = new InMemoryXmlRepository());
+            }
+
             if (testApi)
             {
                 TestPipeline.AddTo(services, Clock);

@@ -6,6 +6,7 @@ using EventHub.Domain.Users;
 using EventHub.Infrastructure.Persistence.Configurations;
 using EventHub.Infrastructure.Persistence.Conventions;
 using EventHub.Infrastructure.Persistence.Scopes;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -14,13 +15,19 @@ namespace EventHub.Infrastructure.Persistence;
 /// <summary>
 /// The EF Core context (AD-30). One instance per DI scope, so each data scope (AD-7) has its own context and
 /// connection; the RLS interceptor sets the session context from <see cref="ScopeAccessor"/> on every open.
+/// <para>
+/// It is also the Data Protection key store (AD-21): <c>DataProtectionKeys</c> is a global System table with no
+/// <c>OrganizationId</c> and no RLS, so the key ring loads in any data scope. It is not on <see cref="IAppDbContext"/>.
+/// </para>
 /// </summary>
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options, ScopeAccessor scopeAccessor)
-    : DbContext(options), IAppDbContext, ITenantFilterSource
+    : DbContext(options), IAppDbContext, ITenantFilterSource, IDataProtectionKeyContext
 {
     public DbSet<User> Users => Set<User>();
 
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     public DataScope DataScope => scopeAccessor.Current;
 

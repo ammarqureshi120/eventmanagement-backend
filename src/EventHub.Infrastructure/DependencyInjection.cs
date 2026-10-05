@@ -7,6 +7,7 @@ using EventHub.Infrastructure.Persistence;
 using EventHub.Infrastructure.Persistence.Interceptors;
 using EventHub.Infrastructure.Persistence.Scopes;
 using EventHub.Infrastructure.Time;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -78,6 +79,16 @@ public static class DependencyInjection
             // Order matters: hosted services start in registration order, so the schema exists before seeding.
             services.AddHostedService<DatabaseMigrator>();
             services.AddHostedService<SystemAdministratorSeeder>();
+        }
+
+        // AD-21: one key ring for every instance and restart, stored in the global DataProtectionKeys table.
+        // Registered after the migrator: Data Protection's key-ring preload hosted service then starts after
+        // migrations. Keys are not encrypted at rest yet (hosting follow-up: ProtectKeysWith* via Key Vault/KMS).
+        var dataProtection = services.AddDataProtection().SetApplicationName("EventHub");
+        if (!isDocumentGeneration)
+        {
+            dataProtection.PersistKeysToDbContext<AppDbContext>();
+            services.AddHostedService<DataProtectionKeyEncryptionCheck>();
         }
 
         // AD-21: readiness = database only; SMTP is reported on /health detail only.

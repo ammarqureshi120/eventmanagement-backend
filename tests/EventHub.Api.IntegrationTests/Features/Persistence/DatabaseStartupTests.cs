@@ -3,36 +3,48 @@ using EventHub.Domain.Users;
 using EventHub.Infrastructure.Persistence;
 using EventHub.Infrastructure.Persistence.Scopes;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Serilog.Core;
+using Serilog.Events;
 
 namespace EventHub.Api.IntegrationTests.Features.Persistence;
 
-/// <summary>AD-30 / FR37: on an empty database the hosted migrator runs before the seeder; switched off, nothing is created.</summary>
+/// <summary>
+/// AD-30 / FR37 / AD-21: on an empty database the hosted migrator runs before the seeder and the Data Protection
+/// key-ring preload; switched off, nothing is created.
+/// </summary>
 [Collection(LocalSqlCollection.Name)]
 public sealed class DatabaseStartupTests(LocalSqlFixture sql)
 {
     [Fact]
-    public async Task Start_WhenDatabaseEmptyAndMigrateOnStartup_AppliesBothMigrationsThenSeeds()
+    public async Task Start_WhenDatabaseEmptyAndMigrateOnStartup_AppliesAllMigrationsThenSeedsAndCreatesAKey()
     {
         sql.SkipIfUnavailable();
         var database = await sql.CreateEmptyDatabaseAsync();
         try
         {
             var email = $"fresh-{Guid.NewGuid():N}@example.test";
+            var sink = new InMemoryLogSink();
             await using (var factory = new EventHubApiFactory(sql.ConnectionStringFor(database), settings: new Dictionary<string, string>
                          {
                              ["EventHub:Database:MigrateOnStartup"] = "true",
                              ["EventHub:Seed:SystemAdministrators:0"] = email,
-                         }))
+                         }, configureServices: s => s.AddSingleton<ILogEventSink>(sink)))
             {
                 using var _ = factory.CreateClient();
             }
 
-            Assert.Equal(["Auth_Users", "Foundation_Rls"], await Strings(database, DataScope.None,
+            Assert.Equal(["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys"], await Strings(database, DataScope.None,
                 "SELECT SUBSTRING(MigrationId, 16, 100) FROM dbo.__EFMigrationsHistory ORDER BY MigrationId"));
             Assert.Equal(["SystemAdministrator"], await Strings(database, DataScope.Identity,
                 $"SELECT Role FROM dbo.Users WHERE NormalizedEmail = N'{User.NormalizeEmail(email)}'"));
+
+            // AD-21: the key-ring preload runs after the migrator, so it creates a key instead of failing on a missing table.
+            Assert.NotEmpty(await Strings(database, DataScope.None,
+                "SELECT FriendlyName FROM dbo.DataProtectionKeys WHERE FriendlyName IS NOT NULL AND Xml LIKE N'%<key %'"));
+            Assert.DoesNotContain(sink.Events, e => e.Level >= LogEventLevel.Error);
         }
         finally
         {
