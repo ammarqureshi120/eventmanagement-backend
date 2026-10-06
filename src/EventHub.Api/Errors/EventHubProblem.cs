@@ -18,6 +18,8 @@ public static class EventHubProblem
     public static class Codes
     {
         public const string Validation = "validation";
+        public const string InvalidCredentials = "invalid_credentials";
+        public const string SessionExpired = "session_expired";
         public const string Forbidden = "forbidden";
         public const string NotFound = "not_found";
         public const string ServerError = "server_error";
@@ -77,6 +79,8 @@ public static class EventHubProblem
     private static string Title(string code) => code switch
     {
         Codes.Validation => "Some fields need a look.",
+        Codes.InvalidCredentials => "Email or password is incorrect.",
+        Codes.SessionExpired => "Your session has ended. Please sign in again.",
         Codes.Forbidden => "You don't have access to do that.",
         Codes.NotFound => "We couldn't find that.",
         _ => "Something went wrong on our side. Please try again.",

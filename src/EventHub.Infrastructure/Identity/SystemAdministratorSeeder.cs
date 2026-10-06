@@ -16,11 +16,19 @@ namespace EventHub.Infrastructure.Identity;
 /// Identity scope, with role SystemAdministrator, status Active, no Organization and no password. Idempotent
 /// by normalized email; a lost unique-index race counts as already seeded. It never updates or removes
 /// existing rows. Logs carry indexes and ids only, never the email (AD-22).
+/// <para>
+/// Outside Release (<c>EVENTHUB_SEED_TOOLS</c>) and only when the host runs in Development, an entry's optional
+/// <c>DevPassword</c> is set through <c>IIdentityAccount.SetPasswordForSeedAsync</c> when the user has no
+/// password yet (Story 1.4 decision; a Development-only override of AD-31). The value is never logged.
+/// </para>
 /// </summary>
 public sealed partial class SystemAdministratorSeeder(
     IConfiguration configuration,
     DbScopeFactory scopes,
     IIdGenerator ids,
+#if EVENTHUB_SEED_TOOLS
+    IHostEnvironment environment,
+#endif
     ILogger<SystemAdministratorSeeder> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -61,6 +69,9 @@ public sealed partial class SystemAdministratorSeeder(
         if (existing is not null)
         {
             LogAlreadySeeded(logger, entry.Index, existing.Id);
+#if EVENTHUB_SEED_TOOLS
+            await ApplyDevPasswordAsync(entry, scope, users, existing, cancellationToken);
+#endif
             return;
         }
 
@@ -82,6 +93,9 @@ public sealed partial class SystemAdministratorSeeder(
             if (result.Succeeded)
             {
                 LogSeeded(logger, entry.Index, user.Id);
+#if EVENTHUB_SEED_TOOLS
+                await ApplyDevPasswordAsync(entry, scope, users, user, cancellationToken);
+#endif
             }
             else
             {
@@ -96,6 +110,39 @@ public sealed partial class SystemAdministratorSeeder(
 
         cancellationToken.ThrowIfCancellationRequested();
     }
+
+#if EVENTHUB_SEED_TOOLS
+    /// <summary>Development only, and only for a user without a password; never logs the value.</summary>
+    private async Task ApplyDevPasswordAsync(
+        SystemAdministratorSeed entry, DbScope scope, UserManager<User> users, User user, CancellationToken cancellationToken)
+    {
+        if (entry.DevPassword is null)
+        {
+            return;
+        }
+
+        if (!environment.IsDevelopment())
+        {
+            LogDevPasswordIgnored(logger, entry.Index);
+            return;
+        }
+
+        if (await users.HasPasswordAsync(user))
+        {
+            return;
+        }
+
+        // Resolved from DI (the seed scope), never constructed here.
+        await scope.Services.GetRequiredService<IIdentityAccount>().SetPasswordForSeedAsync(user.Id, entry.DevPassword, cancellationToken);
+        LogDevPasswordApplied(logger, entry.Index, user.Id);
+    }
+
+    [LoggerMessage(EventId = 2006, Level = LogLevel.Information, Message = "Set the Development password of System Administrator {UserId} from seed entry {Index}")]
+    private static partial void LogDevPasswordApplied(ILogger logger, int index, Guid userId);
+
+    [LoggerMessage(EventId = 2007, Level = LogLevel.Warning, Message = "Ignoring the Development password of System Administrator seed entry {Index}: the host is not in Development")]
+    private static partial void LogDevPasswordIgnored(ILogger logger, int index);
+#endif
 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is SqlException { Number: 2601 or 2627 };

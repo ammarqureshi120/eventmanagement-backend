@@ -5,6 +5,7 @@ using EventHub.Infrastructure.Identity;
 using EventHub.Infrastructure.Ids;
 using EventHub.Infrastructure.Persistence;
 using EventHub.Infrastructure.Persistence.Interceptors;
+using EventHub.Infrastructure.Persistence.Readers;
 using EventHub.Infrastructure.Persistence.Scopes;
 using EventHub.Infrastructure.Time;
 using Microsoft.AspNetCore.DataProtection;
@@ -68,6 +69,9 @@ public static class DependencyInjection
         services.AddIdentityCore<User>(options => options.User.AllowedUserNameCharacters = string.Empty)
             .AddUserStore<UserStore>();
         services.AddScoped<IIdentityAccount, IdentityAccount>();
+
+        // AD-20: read ports project through the request context, so the request's RLS scope applies.
+        services.AddScoped<IUserProfileReader, UserProfileReader>();
 
         services.AddOptions<SmtpOptions>()
             .Bind(configuration.GetSection(SmtpOptions.SectionName));

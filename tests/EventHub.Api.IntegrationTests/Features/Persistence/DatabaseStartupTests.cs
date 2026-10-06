@@ -36,7 +36,7 @@ public sealed class DatabaseStartupTests(LocalSqlFixture sql)
                 using var _ = factory.CreateClient();
             }
 
-            Assert.Equal(["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys"], await Strings(database, DataScope.None,
+            Assert.Equal(["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys", "Auth_AuditIdentityInsert"], await Strings(database, DataScope.None,
                 "SELECT SUBSTRING(MigrationId, 16, 100) FROM dbo.__EFMigrationsHistory ORDER BY MigrationId"));
             Assert.Equal(["SystemAdministrator"], await Strings(database, DataScope.Identity,
                 $"SELECT Role FROM dbo.Users WHERE NormalizedEmail = N'{User.NormalizeEmail(email)}'"));

@@ -16,7 +16,7 @@ public sealed class AuditWriterIntegrationTests(LocalSqlFixture sql)
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, testApi: true);
         factory.Clock.UtcNow = new DateTime(2027, 4, 1, 8, 30, 0, DateTimeKind.Utc);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient();
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.SysAdmin);
         var entityId = Guid.NewGuid();
 
@@ -49,7 +49,7 @@ public sealed class AuditWriterIntegrationTests(LocalSqlFixture sql)
     {
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, testApi: true);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient();
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.SysAdmin);
         var entityId = Guid.NewGuid();
 
@@ -65,7 +65,7 @@ public sealed class AuditWriterIntegrationTests(LocalSqlFixture sql)
     {
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, testApi: true);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient();
         var organizationId = Guid.NewGuid();
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.OrgAdmin(organizationId));
 
@@ -83,7 +83,7 @@ public sealed class AuditWriterIntegrationTests(LocalSqlFixture sql)
     {
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, testApi: true);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient();
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.SysAdmin);
 
         var response = await client.PostAsync("/api/test/endless-events", content: null, TestContext.Current.CancellationToken);

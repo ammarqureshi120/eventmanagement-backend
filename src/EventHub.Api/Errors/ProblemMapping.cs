@@ -6,7 +6,8 @@ namespace EventHub.Api.Errors;
 
 /// <summary>
 /// AD-17 mapping, defined once: exceptions and bare status codes to (status, code). Story 1.3 maps
-/// <c>validation</c>, <c>forbidden</c>, <c>not_found</c> and <c>server_error</c>; later stories add their codes here.
+/// <c>validation</c>, <c>forbidden</c>, <c>not_found</c> and <c>server_error</c>; Story 1.4 adds
+/// <c>invalid_credentials</c> and <c>session_expired</c> (a bare 401: the cookie challenge); later stories add theirs here.
 /// </summary>
 public static class ProblemMapping
 {
@@ -14,6 +15,7 @@ public static class ProblemMapping
 
     public static Mapped FromException(Exception exception) => exception switch
     {
+        InvalidCredentialsException => new Mapped(StatusCodes.Status401Unauthorized, EventHubProblem.Codes.InvalidCredentials),
         ForbiddenException => new Mapped(StatusCodes.Status403Forbidden, EventHubProblem.Codes.Forbidden),
         NotFoundException => new Mapped(StatusCodes.Status404NotFound, EventHubProblem.Codes.NotFound),
         RequestValidationException invalid => new Mapped(
@@ -25,9 +27,10 @@ public static class ProblemMapping
         _ => new Mapped(StatusCodes.Status500InternalServerError, EventHubProblem.Codes.ServerError),
     };
 
-    /// <summary>400/415 → validation, 403 → forbidden, 404/405 → not_found, ≥500 → server_error; other 4xx → validation.</summary>
+    /// <summary>401 → session_expired, 400/415 → validation, 403 → forbidden, 404/405 → not_found, ≥500 → server_error; other 4xx → validation.</summary>
     public static string CodeForStatus(int status) => status switch
     {
+        StatusCodes.Status401Unauthorized => EventHubProblem.Codes.SessionExpired,
         StatusCodes.Status403Forbidden => EventHubProblem.Codes.Forbidden,
         StatusCodes.Status404NotFound or StatusCodes.Status405MethodNotAllowed => EventHubProblem.Codes.NotFound,
         >= 500 => EventHubProblem.Codes.ServerError,

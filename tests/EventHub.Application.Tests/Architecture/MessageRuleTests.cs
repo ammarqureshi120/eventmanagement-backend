@@ -44,6 +44,27 @@ public sealed class MessageRuleTests
         Assert.True(offenders.Count == 0, "Static Permission missing or empty: " + string.Join(", ", offenders));
     }
 
+    /// <summary>Story 1.4: login, logout and me carry their permissions, and the Identity-scoped ones are granted only there.</summary>
+    [Fact]
+    public void Story14Messages_WhenScanned_CarryTheirPermissionAndScope()
+    {
+        Assert.Equal(AppPermissions.AuthLogin, PermissionOf<EventHub.Application.Auth.Login.LoginCommand>.Value);
+        Assert.Equal(AppPermissions.AuthLogout, PermissionOf<EventHub.Application.Auth.Logout.LogoutCommand>.Value);
+        Assert.Equal(AppPermissions.MeGet, PermissionOf<EventHub.Application.Me.GetMe.GetMeQuery>.Value);
+
+        var identityScoped = Messages().Where(type => typeof(EventHub.Application.Common.Tenancy.IIdentityScoped).IsAssignableFrom(type)).ToList();
+        Assert.Equal(
+            ["LoginCommand", "LogoutCommand"],
+            identityScoped.Select(type => type.Name).Order(StringComparer.Ordinal));
+        var grants = new AppPermissionGrants().Grants.ToList();
+        foreach (var type in identityScoped)
+        {
+            var permission = ReadPermission(type)!.Value;
+            Assert.All(grants.Where(grant => grant.Permission == permission),
+                grant => Assert.Equal(EventHub.Application.Common.Ports.ScopeKind.Identity, grant.Scope));
+        }
+    }
+
     [Fact]
     public void PermissionOf_WhenTypeLacksIRequirePermission_IsNullSoAuthorizationFailsClosed()
     {

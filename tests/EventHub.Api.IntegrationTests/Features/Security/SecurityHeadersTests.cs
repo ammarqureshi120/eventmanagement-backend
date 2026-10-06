@@ -75,7 +75,7 @@ public sealed class SecurityHeadersOnErrorTests(LocalSqlFixture sql)
     {
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, environment, testApi: true);
-        using var client = Client(factory, "https://eventhub.test");
+        using var client = factory.CreateApiClient("https://eventhub.test");
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.SysAdmin);
 
         var response = await client.PostAsJsonAsync("/api/test/crash", new { secret = "x" }, TestContext.Current.CancellationToken);

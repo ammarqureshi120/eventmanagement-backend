@@ -33,15 +33,27 @@ var mailpitSmtp = mailpit.GetEndpoint("smtp");
 var sysAdminEmail = builder.AddParameter("sysadmin-email");
 var smtpFrom = builder.AddParameter("smtp-from");
 
+// Optional, Development only (Story 1.4): `dotnet user-secrets set "Parameters:sysadmin-dev-password" ...` gives the
+// seeded System Administrator a password so sign-in works locally. Added only when set, so Aspire never prompts for
+// it; the API applies it only in Development, only to a user without a password, and never logs it.
+var sysAdminDevPassword = string.IsNullOrEmpty(builder.Configuration["Parameters:sysadmin-dev-password"])
+    ? null
+    : builder.AddParameter("sysadmin-dev-password", secret: true);
+
 var api = builder.AddProject<Projects.EventHub_Api>("api")
     .WithReference(database)
     .WaitFor(database)
     // SMTP is reported on /health only, never readiness (AD-21), so the API does not wait for Mailpit.
     .WithEnvironment("EventHub__Smtp__Host", mailpitSmtp.Property(EndpointProperty.Host))
     .WithEnvironment("EventHub__Smtp__Port", mailpitSmtp.Property(EndpointProperty.Port))
-    .WithEnvironment("EventHub__Seed__SystemAdministrators__0", sysAdminEmail)
+    .WithEnvironment("EventHub__Seed__SystemAdministrators__0__Email", sysAdminEmail)
     .WithEnvironment("EventHub__Smtp__From", smtpFrom)
     .WithHttpHealthCheck("/health/ready");
+
+if (sysAdminDevPassword is not null)
+{
+    api.WithEnvironment("EventHub__Seed__SystemAdministrators__0__DevPassword", sysAdminDevPassword);
+}
 
 // The SPA lives in the sibling frontend repo (path is relative to this project directory).
 // WithReference(api) injects services__api__https__0 / services__api__http__0 for the Vite /api proxy.

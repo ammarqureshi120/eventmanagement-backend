@@ -129,6 +129,42 @@ public sealed class RlsScopeReadTests(LocalSqlFixture sql)
             DataScope.System, "SELECT COUNT(*) FROM dbo.AuditEntries WHERE EntityId = @marker AND OrganizationId = @org", ("@marker", marker), ("@org", OrgB)));
     }
 
+    /// <summary>
+    /// AD-7 (Story 1.4): the Identity scope may insert only its own Audit Entry actions (sign-in/out, reset completed,
+    /// invite accepted) and still reads none, so it can neither see nor update them; other scopes keep their 1.3 rules.
+    /// </summary>
+    [Fact]
+    public async Task IdentityScope_WhenWritingAudit_CanInsertButReadsAndUpdatesNothing()
+    {
+        sql.SkipIfUnavailable();
+        var marker = Guid.NewGuid();
+        const string insertAudit =
+            "INSERT INTO dbo.AuditEntries (Id, OrganizationId, ActorType, ActorId, ActorName, Action, EntityType, EntityId, Visibility, OccurredAtUtc) " +
+            "VALUES (NEWID(), @org, 'SystemAdministrator', @marker, N'x', 'user.signedIn', 'User', @marker, @visibility, SYSUTCDATETIME())";
+
+        Assert.Equal(1, await sql.ExecuteAsync(DataScope.Identity, insertAudit, ("@org", null), ("@marker", marker), ("@visibility", "Platform")));
+        Assert.Equal(1, await sql.ExecuteAsync(DataScope.Identity, insertAudit, ("@org", OrgA), ("@marker", marker), ("@visibility", "Tenant")));
+
+        Assert.Equal(0, await sql.ScalarAsync<int>(
+            DataScope.Identity, "SELECT COUNT(*) FROM dbo.AuditEntries WHERE EntityId = @marker", ("@marker", marker)));
+        Assert.Equal(0, await sql.ExecuteAsync(
+            DataScope.Identity, "UPDATE dbo.AuditEntries SET ActorName = N'changed' WHERE EntityId = @marker", ("@marker", marker)));
+        Assert.Equal(2, await sql.ScalarAsync<int>(
+            DataScope.System, "SELECT COUNT(*) FROM dbo.AuditEntries WHERE EntityId = @marker AND ActorName = N'x'", ("@marker", marker)));
+
+        // Any other action is blocked for Identity.
+        var otherAction = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => sql.ExecuteAsync(
+            DataScope.Identity,
+            insertAudit.Replace("'user.signedIn'", "'organization.created'", StringComparison.Ordinal),
+            ("@org", null), ("@marker", marker), ("@visibility", "Platform")));
+        Assert.Equal(33504, otherAction.Number);
+
+        // No scope still inserts nothing.
+        var unscoped = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => sql.ExecuteAsync(
+            DataScope.None, insertAudit, ("@org", null), ("@marker", marker), ("@visibility", "Platform")));
+        Assert.Equal(33504, unscoped.Number);
+    }
+
     private static DataScope Scope(string name) => name switch
     {
         "identity" => DataScope.Identity,
