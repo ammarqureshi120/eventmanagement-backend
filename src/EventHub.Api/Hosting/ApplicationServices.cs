@@ -52,7 +52,7 @@ public static class ApplicationServices
     {
         services.AddScoped<ITenantContext, CurrentUserTenantContext>();
         services.AddScoped<IApplicationEvents, ApplicationEventQueue>();
-        services.AddSingleton<IPermissionGrantSource, EmptyPermissionGrantSource>();
+        services.AddSingleton<IPermissionGrantSource, AppPermissionGrants>();
         services.AddScoped<PermissionMatrix>();
         services.AddValidatorsFromAssembly(typeof(ApplicationAssembly).Assembly, ServiceLifetime.Scoped, includeInternalTypes: true);
         return services;

@@ -10,6 +10,7 @@ namespace EventHub.Application.Tests.Pipeline;
 public sealed class SeedToolsReleaseTests
 {
     private const string SeedMethod = "SetPasswordForSeedAsync";
+    private const string DevPassword = "DevPassword";
 
     [Theory]
     [InlineData("EventHub.Infrastructure")]
@@ -38,6 +39,49 @@ public sealed class SeedToolsReleaseTests
         Assert.Empty(offenders);
     }
 
+    /// <summary>
+    /// Story 1.4: the Development-only seed password (<c>DevPassword</c>) binding and the code that applies it exist
+    /// only outside Release: no member, constant or string literal named after it, and no call to the seed setter.
+    /// </summary>
+    [Fact]
+    public void ReleaseInfrastructure_WhenInspected_HasNoDevPasswordBindingOrApplyPath()
+    {
+        var path = ReleaseAssemblyPath("EventHub.Infrastructure");
+        if (!File.Exists(path))
+        {
+            var reason = $"Release build of EventHub.Infrastructure not found at {path}; run 'dotnet build -c Release' first.";
+            if (Environment.GetEnvironmentVariable("EVENTHUB_REQUIRE_RELEASE_BUILD") == "1")
+            {
+                Assert.Fail(reason);
+            }
+
+            Assert.Skip(reason);
+        }
+
+        using var module = ModuleDefinition.ReadModule(path);
+        var types = module.GetTypes().ToList();
+        var members = types.SelectMany(type =>
+                type.Methods.Select(m => $"{type.FullName}.{m.Name}")
+                    .Concat(type.Properties.Select(p => $"{type.FullName}.{p.Name}"))
+                    .Concat(type.Fields.Select(f => $"{type.FullName}.{f.Name}")))
+            .Where(name => name.Contains(DevPassword, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var literals = types.SelectMany(type => type.Methods)
+            .Where(method => method.HasBody)
+            .SelectMany(method => method.Body.Instructions)
+            .Where(instruction => instruction.Operand is string text && text.Contains(DevPassword, StringComparison.OrdinalIgnoreCase))
+            .Select(instruction => (string)instruction.Operand)
+            .ToList();
+        var seedCalls = types.SelectMany(type => type.Methods)
+            .Where(method => method.HasBody && method.Body.Instructions.Any(i => i.Operand is MethodReference { Name: SeedMethod }))
+            .Select(method => $"{method.DeclaringType.FullName}.{method.Name}")
+            .ToList();
+
+        Assert.Empty(members);
+        Assert.Empty(literals);
+        Assert.Empty(seedCalls);
+    }
+
 #if EVENTHUB_SEED_TOOLS
     [Fact]
     public void DebugAssembly_WhenInspected_HasTheSeedOnlyPasswordMethod()
@@ -45,6 +89,8 @@ public sealed class SeedToolsReleaseTests
         // Proves the Release check looks for a name that really exists when the symbol is defined.
         Assert.NotNull(typeof(EventHub.Application.Common.Ports.IIdentityAccount).GetMethod(SeedMethod));
         Assert.NotNull(typeof(EventHub.Infrastructure.Identity.IdentityAccount).GetMethod(SeedMethod));
+        Assert.NotNull(typeof(EventHub.Infrastructure.Identity.SystemAdministratorSeed).GetProperty(DevPassword));
+        Assert.Equal(DevPassword, EventHub.Infrastructure.Identity.SeedOptions.DevPasswordKey);
     }
 #endif
 

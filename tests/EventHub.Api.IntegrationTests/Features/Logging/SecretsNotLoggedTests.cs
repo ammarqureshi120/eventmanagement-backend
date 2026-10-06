@@ -20,22 +20,24 @@ public sealed class SecretsNotLoggedTests(LocalSqlFixture sql)
         var sink = new InMemoryLogSink();
         await using var factory = new EventHubApiFactory(
             sql.ConnectionString, testApi: true, configureServices: s => s.AddSingleton<ILogEventSink>(sink));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient(out var browser);
         client.DefaultRequestHeaders.Add(TestActor.Header, TestActor.SysAdmin);
 
+        // A (garbage) session cookie, a password and a token in the body; the real antiforgery token is added by the
+        // client and must not be logged either.
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/test/echo")
         {
             Content = JsonContent.Create(new { password = passwordSecret, resetToken = tokenSecret }),
         };
         request.Headers.Add("Cookie", $".EventHub.Session={cookieSecret}");
-        request.Headers.Add("X-XSRF-TOKEN", tokenSecret);
         var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var xsrfToken = Uri.UnescapeDataString(browser.Cookie(new Uri("http://localhost"), "XSRF-TOKEN")!["XSRF-TOKEN=".Length..]);
         var lines = sink.RenderAll();
         Assert.NotEmpty(lines);
         Assert.Contains(lines, line => line.Contains("EchoCommand", StringComparison.Ordinal)); // the pipeline did log
-        foreach (var secret in new[] { cookieSecret, passwordSecret, tokenSecret })
+        foreach (var secret in new[] { cookieSecret, passwordSecret, tokenSecret, xsrfToken })
         {
             Assert.DoesNotContain(lines, line => line.Contains(secret, StringComparison.Ordinal));
         }

@@ -153,12 +153,89 @@ public sealed class SystemAdministratorSeedingTests(LocalSqlFixture sql)
             new PasswordHasher<User>().VerifyHashedPassword(null!, after.PasswordHash!, password));
         Assert.Equal(0x01, Convert.FromBase64String(after.PasswordHash!)[0]);
     }
+
+    /// <summary>Story 1.4 decision: a Development-only seed password, applied only to a user without one, never logged.</summary>
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Production", false)]
+    public async Task Start_WhenDevPasswordConfigured_SetsItOnlyInDevelopmentAndNeverLogsIt(string environment, bool expectPassword)
+    {
+        sql.SkipIfUnavailable();
+        const string devPassword = "Dev-Seed-Passw0rd-7c1";
+        var email = UniqueEmail("devpw");
+        var sink = new InMemoryLogSink();
+
+        await StartAsync(
+            new Dictionary<string, string>
+            {
+                ["EventHub:Seed:SystemAdministrators:0:Email"] = email,
+                ["EventHub:Seed:SystemAdministrators:0:DevPassword"] = devPassword,
+            },
+            sink,
+            environment);
+
+        var row = Assert.Single(await ReadUsers(email));
+        if (expectPassword)
+        {
+            Assert.NotNull(row.PasswordHash);
+            Assert.Equal(PasswordVerificationResult.Success,
+                new PasswordHasher<User>().VerifyHashedPassword(null!, row.PasswordHash!, devPassword));
+        }
+        else
+        {
+            Assert.Null(row.PasswordHash);
+            Assert.Contains(sink.Events, e => e.Level == LogEventLevel.Warning
+                                              && InMemoryLogSink.Render(e).Contains("not in Development", StringComparison.Ordinal));
+        }
+
+        Assert.DoesNotContain(sink.RenderAll(), line => line.Contains(devPassword, StringComparison.Ordinal));
+        Assert.DoesNotContain(sink.RenderAll(), line => line.Contains(email, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Start_WhenUserAlreadyHasAPassword_LeavesItUnchanged()
+    {
+        sql.SkipIfUnavailable();
+        var email = UniqueEmail("haspw");
+        Dictionary<string, string> Settings(string password) => new()
+        {
+            ["EventHub:Seed:SystemAdministrators:0:Email"] = email,
+            ["EventHub:Seed:SystemAdministrators:0:DevPassword"] = password,
+        };
+
+        await StartAsync(Settings("First-Passw0rd-1"));
+        var first = Assert.Single(await ReadUsers(email));
+        await StartAsync(Settings("Second-Passw0rd-2"));
+        var second = Assert.Single(await ReadUsers(email));
+
+        Assert.NotNull(first.PasswordHash);
+        Assert.Equal(first.PasswordHash, second.PasswordHash);
+        Assert.Equal(first.SecurityStamp, second.SecurityStamp);
+    }
+
+    [Fact]
+    public async Task Start_WhenExistingPasswordlessUserGetsADevPassword_SetsIt()
+    {
+        sql.SkipIfUnavailable();
+        var email = UniqueEmail("later");
+        await StartAsync(new Dictionary<string, string> { ["EventHub:Seed:SystemAdministrators:0"] = email });
+        Assert.Null(Assert.Single(await ReadUsers(email)).PasswordHash);
+
+        await StartAsync(new Dictionary<string, string>
+        {
+            ["EventHub:Seed:SystemAdministrators:0:Email"] = email,
+            ["EventHub:Seed:SystemAdministrators:0:DevPassword"] = "Later-Passw0rd-3",
+        });
+
+        Assert.NotNull(Assert.Single(await ReadUsers(email)).PasswordHash);
+    }
 #endif
 
-    private async Task StartAsync(Dictionary<string, string> settings, InMemoryLogSink? sink = null)
+    private async Task StartAsync(Dictionary<string, string> settings, InMemoryLogSink? sink = null, string environment = "Development")
     {
         await using var factory = new EventHubApiFactory(
             sql.ConnectionString,
+            environment,
             settings: settings,
             configureServices: sink is null ? null : services => services.AddSingleton<ILogEventSink>(sink));
         using var _ = factory.CreateClient(); // starts the host: migrator, then seeder

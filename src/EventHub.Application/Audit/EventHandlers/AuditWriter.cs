@@ -7,8 +7,9 @@ using Mediator;
 namespace EventHub.Application.Audit.EventHandlers;
 
 /// <summary>
-/// The single writer of Audit Entries (AD-14): one entry per <see cref="IAuditableEvent"/>, actor from
-/// <see cref="ICurrentUser"/>, id from <see cref="IIdGenerator"/>, time from <see cref="IClock"/> and
+/// The single writer of Audit Entries (AD-14): one entry per <see cref="IAuditableEvent"/>, actor from the
+/// event's <see cref="IAuditableEvent.SubjectActor"/> when it carries one (sign-in), else from
+/// <see cref="ICurrentUser"/>; id from <see cref="IIdGenerator"/>, time from <see cref="IClock"/> and
 /// <c>Visibility</c> resolved from the action's rule. The entry is added to the unit of work during
 /// domain-event dispatch, so it is saved with the command, in the same transaction, or not at all.
 /// </summary>
@@ -19,7 +20,8 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
     {
         ArgumentNullException.ThrowIfNull(notification);
 
-        var (visibility, organizationId) = Resolve(notification);
+        var actor = ResolveActor(notification);
+        var (visibility, organizationId) = Resolve(notification, actor);
         if (visibility == AuditEntryVisibility.Tenant && organizationId is null)
         {
             // A Tenant row without an Organization would be visible to no one (AD-14).
@@ -29,9 +31,9 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
         db.Add(AuditEntry.Record(
             ids.NewId(),
             organizationId,
-            ActorType(currentUser.Kind),
-            currentUser.Kind == ActorKind.System ? null : currentUser.UserId,
-            Truncate(currentUser.DisplayName, AuditEntry.ActorNameMaxLength),
+            ActorType(actor.Kind),
+            actor.Kind == ActorKind.System ? null : actor.Id,
+            Truncate(actor.Name, AuditEntry.ActorNameMaxLength),
             AuditActionCatalogue.WireValue(notification.Action),
             notification.EntityType,
             notification.EntityId,
@@ -41,7 +43,13 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
         return ValueTask.CompletedTask;
     }
 
-    private (AuditEntryVisibility Visibility, Guid? OrganizationId) Resolve(IAuditableEvent notification) =>
+    /// <summary>The event's subject actor wins; otherwise the caller. Either way it must be authenticated or System.</summary>
+    private ResolvedActor ResolveActor(IAuditableEvent notification) =>
+        notification.SubjectActor is { } subject
+            ? new ResolvedActor(subject.Kind, subject.Id, subject.OrganizationId, subject.Name)
+            : new ResolvedActor(currentUser.Kind, currentUser.UserId, currentUser.OrganizationId, currentUser.DisplayName);
+
+    private static (AuditEntryVisibility Visibility, Guid? OrganizationId) Resolve(IAuditableEvent notification, ResolvedActor actor) =>
         AuditActionCatalogue.VisibilityRule(notification.Action) switch
         {
             AuditVisibilityRule.Platform => (AuditEntryVisibility.Platform, notification.OrganizationId),
@@ -53,9 +61,9 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
                     $"Audit action {notification.Action} needs the target user's role."),
                 _ => (AuditEntryVisibility.Tenant, notification.OrganizationId),
             },
-            AuditVisibilityRule.ByActor => currentUser.Kind == ActorKind.SystemAdministrator
+            AuditVisibilityRule.ByActor => actor.Kind == ActorKind.SystemAdministrator
                 ? (AuditEntryVisibility.Platform, null)
-                : (AuditEntryVisibility.Tenant, currentUser.OrganizationId ?? notification.OrganizationId),
+                : (AuditEntryVisibility.Tenant, actor.OrganizationId ?? notification.OrganizationId),
             var rule => throw new InvalidOperationException($"Unknown audit visibility rule {rule}."),
         };
 
@@ -70,3 +78,6 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
         _ => throw new InvalidOperationException("An audited action needs an authenticated or System actor."),
     };
 }
+
+/// <summary>The resolved actor of one audit entry.</summary>
+internal readonly record struct ResolvedActor(ActorKind Kind, Guid? Id, Guid? OrganizationId, string? Name);

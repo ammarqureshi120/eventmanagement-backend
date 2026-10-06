@@ -5,7 +5,10 @@ using EventHub.Application.Common.Ports;
 using EventHub.Contracts.Audit;
 using EventHub.Domain.Users;
 using FluentValidation;
+using EventHub.Application.Auth.Login;
+using EventHub.Infrastructure.Persistence;
 using Mediator;
+using Microsoft.EntityFrameworkCore;
 
 namespace EventHub.Api.IntegrationTests.TestApi;
 
@@ -174,5 +177,18 @@ public sealed class DuplicateUserCommandHandler(IAppDbContext db, IIdGenerator i
         db.Add(User.CreateSystemAdministrator(ids.NewId(), command.Email, null, null));
         db.Add(User.CreateSystemAdministrator(ids.NewId(), command.Email.ToUpperInvariant(), null, null));
         return ValueTask.FromResult(new TestOutcome("saved by the transaction behavior"));
+    }
+}
+
+// Session context: records the SQL SESSION_CONTEXT('Scope') of the request's unit of work while login's audit is
+// dispatched, proving login's DB work runs in the Identity scope (test host only).
+public sealed class SessionContextProbe(AppDbContext db, TestProbe probe) : INotificationHandler<UserSignedIn>
+{
+    public async ValueTask Handle(UserSignedIn notification, CancellationToken cancellationToken)
+    {
+        var scope = await db.Database
+            .SqlQueryRaw<string?>("SELECT CAST(SESSION_CONTEXT(N'Scope') AS nvarchar(16)) AS [Value]")
+            .SingleAsync(cancellationToken);
+        probe.SignInSessionScopes.Enqueue(scope);
     }
 }

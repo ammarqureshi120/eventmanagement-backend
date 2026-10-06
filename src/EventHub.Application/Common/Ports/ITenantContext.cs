@@ -12,7 +12,8 @@ public enum ScopeKind
 
 /// <summary>
 /// The request's data scope (AD-7): <c>Tenant(orgId)</c> for Organization users, <c>Platform</c> for System
-/// Administrators, <c>System</c> for the System actor, <c>None</c> when anonymous. The Infrastructure scope
+/// Administrators, <c>System</c> for the System actor, <c>None</c> when anonymous, and <c>Identity</c> for
+/// Identity-scoped messages (login, logout). The Infrastructure scope
 /// accessor sets the SQL session context from it on every connection open.
 /// </summary>
 public interface ITenantContext
@@ -21,4 +22,11 @@ public interface ITenantContext
 
     /// <summary>Set only when <see cref="Scope"/> is <see cref="ScopeKind.Tenant"/>.</summary>
     Guid? OrganizationId { get; }
+
+    /// <summary>
+    /// Switches the request to <see cref="ScopeKind.Identity"/> for a message marked
+    /// <c>IIdentityScoped</c> (login, logout). Called only by the authorization behavior, before the request's
+    /// unit of work opens a connection (the session context is read-only once set).
+    /// </summary>
+    void UseIdentityScope();
 }

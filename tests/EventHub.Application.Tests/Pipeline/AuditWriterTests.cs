@@ -118,6 +118,64 @@ public sealed partial class AuditWriterTests
     }
 
     [Fact]
+    public async Task Handle_WhenAnonymousCallerAndEventCarriesASysAdminSubject_RecordsTheSubjectAsPlatformActor()
+    {
+        var (db, writer, _) = Arrange(ActorKind.Anonymous, organizationId: null);
+        var subjectId = Guid.NewGuid();
+
+        await writer.Handle(
+            new Sample(AuditAction.UserSignedIn, null) { Subject = new AuditSubjectActor(subjectId, ActorKind.SystemAdministrator, null, "Sara Khan") },
+            TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(db.Added.OfType<AuditEntry>());
+        Assert.Equal(AuditActorType.SystemAdministrator, entry.ActorType);
+        Assert.Equal(subjectId, entry.ActorId);
+        Assert.Equal("Sara Khan", entry.ActorName);
+        Assert.Equal(AuditEntryVisibility.Platform, entry.Visibility);
+        Assert.Null(entry.OrganizationId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenEventCarriesASubject_TheSubjectWinsOverTheCurrentUser()
+    {
+        var (db, writer, _) = Arrange(ActorKind.SystemAdministrator, organizationId: null);
+        var subjectId = Guid.NewGuid();
+
+        await writer.Handle(
+            new Sample(AuditAction.UserSignedIn, null) { Subject = new AuditSubjectActor(subjectId, ActorKind.EventManager, ActorOrg, "Em Manager") },
+            TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(db.Added.OfType<AuditEntry>());
+        Assert.Equal(AuditActorType.User, entry.ActorType);
+        Assert.Equal(subjectId, entry.ActorId);
+        Assert.Equal("Em Manager", entry.ActorName);
+        Assert.Equal(AuditEntryVisibility.Tenant, entry.Visibility);
+        Assert.Equal(ActorOrg, entry.OrganizationId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenAnonymousCallerAndNoSubject_StillThrows()
+    {
+        var (db, writer, _) = Arrange(ActorKind.Anonymous, organizationId: null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await writer.Handle(new Sample(AuditAction.UserSignedIn, null), TestContext.Current.CancellationToken));
+        Assert.Empty(db.Added);
+    }
+
+    [Fact]
+    public async Task Handle_WhenSubjectIsAnonymous_Throws()
+    {
+        var (db, writer, _) = Arrange(ActorKind.SystemAdministrator, organizationId: null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await writer.Handle(
+                new Sample(AuditAction.UserSignedIn, null) { Subject = new AuditSubjectActor(Guid.NewGuid(), ActorKind.Anonymous, null, "x") },
+                TestContext.Current.CancellationToken));
+        Assert.Empty(db.Added);
+    }
+
+    [Fact]
     public async Task Handle_WhenTenantVisibilityResolvesWithoutOrganization_Throws()
     {
         var (tenantDb, tenantWriter, _) = Arrange(ActorKind.OrgAdministrator, ActorOrg);
@@ -181,6 +239,10 @@ public sealed partial class AuditWriterTests
         public string EntityType => "Sample";
 
         public Guid EntityId { get; } = Guid.NewGuid();
+
+        public AuditSubjectActor? Subject { get; init; }
+
+        public AuditSubjectActor? SubjectActor => Subject;
     }
 
     private sealed class FakeDb : IAppDbContext

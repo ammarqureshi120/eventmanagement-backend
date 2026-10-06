@@ -44,7 +44,8 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
             DataScope.None, "SELECT is_enabled FROM sys.security_policies WHERE name = N'TenantIsolation'"));
         Assert.Equal(
             [
-                "AuditEntries:BLOCK:AFTER INSERT:([sec].[fn_audit]([OrganizationId],[Visibility]))",
+                // Story 1.4: only AFTER INSERT allows Identity-scope inserts (its own actions); UPDATE and reads stay on fn_audit.
+                "AuditEntries:BLOCK:AFTER INSERT:([sec].[fn_audit_write]([OrganizationId],[Visibility],[Action]))",
                 "AuditEntries:BLOCK:AFTER UPDATE:([sec].[fn_audit]([OrganizationId],[Visibility]))",
                 "AuditEntries:FILTER::([sec].[fn_audit]([OrganizationId],[Visibility]))",
                 "Users:BLOCK:AFTER INSERT:([sec].[fn_users]([OrganizationId]))",
@@ -65,7 +66,7 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
         Assert.False(db.Database.HasPendingModelChanges(), "The model has changes without a migration (AD-30).");
         Assert.Empty(await db.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
-            ["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys"],
+            ["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys", "Auth_AuditIdentityInsert"],
             (await db.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken)).Select(id => id[15..]));
     }
 

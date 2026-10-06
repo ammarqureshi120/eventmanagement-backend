@@ -42,6 +42,63 @@ public sealed class PermissionAndValidationTests
     }
 
     [Fact]
+    public void Matrix_WhenAnExplicitAnonymousCellExists_GrantsOnlyThatCell()
+    {
+        var matrix = new PermissionMatrix([new Grants(new PermissionGrant(ActorKind.Anonymous, Sample, ScopeKind.Identity))]);
+
+        Assert.True(matrix.IsGranted(ActorKind.Anonymous, Sample, ScopeKind.Identity));
+        Assert.False(matrix.IsGranted(ActorKind.Anonymous, Sample, ScopeKind.Platform));
+        Assert.False(matrix.IsGranted(ActorKind.Anonymous, new Permission("Sample.Other"), ScopeKind.Identity));
+        Assert.False(matrix.IsGranted(ActorKind.SystemAdministrator, Sample, ScopeKind.Identity));
+    }
+
+    [Fact]
+    public void ProductionGrants_WhenRead_AreExactlyTheStory14Cells_IncludingReLoginForSignedInCallers()
+    {
+        var matrix = new PermissionMatrix([new AppPermissionGrants()]);
+
+        Assert.Equal(
+            [
+                new PermissionGrant(ActorKind.Anonymous, AppPermissions.AuthLogin, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthLogin, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.OrgAdministrator, AppPermissions.AuthLogin, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthLogin, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthLogout, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
+            ],
+            new AppPermissionGrants().Grants);
+        Assert.True(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogin, ScopeKind.Identity));
+        Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.MeGet, ScopeKind.None));
+        Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogout, ScopeKind.Identity));
+        Assert.False(matrix.IsGranted(ActorKind.OrgAdministrator, AppPermissions.MeGet, ScopeKind.Tenant));
+        Assert.Single(new AppPermissionGrants().Grants, grant => grant.Actor == ActorKind.Anonymous);
+    }
+
+    [Theory]
+    [InlineData(ActorKind.Anonymous, null)]
+    [InlineData(ActorKind.SystemAdministrator, null)]
+    [InlineData(ActorKind.OrgAdministrator, "1b8e5f7e-0000-0000-0000-000000000001")]
+    public void TenantContext_WhenIdentityScopeIsUsed_IsIdentityWithoutAnOrganization(ActorKind kind, string? organization)
+    {
+        var context = new CurrentUserTenantContext(new Caller(kind, organization is null ? null : Guid.Parse(organization)));
+
+        context.UseIdentityScope();
+
+        Assert.Equal(ScopeKind.Identity, context.Scope);
+        Assert.Null(context.OrganizationId);
+    }
+
+    [Fact]
+    public void TenantContext_WhenScopeWasAlreadyRead_RefusesTheIdentitySwitch()
+    {
+        var context = new CurrentUserTenantContext(new Caller(ActorKind.SystemAdministrator, null));
+        Assert.Equal(ScopeKind.Platform, context.Scope);
+
+        Assert.Throws<InvalidOperationException>(context.UseIdentityScope);
+        Assert.Equal(ScopeKind.Platform, context.Scope);
+    }
+
+    [Fact]
     public void Matrix_WhenPermissionIsDefault_NeverMatchesAndRejectsSuchGrants()
     {
         var matrix = new PermissionMatrix([new Grants(new PermissionGrant(ActorKind.OrgAdministrator, Sample, ScopeKind.Tenant))]);
@@ -79,6 +136,12 @@ public sealed class PermissionAndValidationTests
     public void ToPath_WhenGivenAFluentValidationPath_ReturnsTheCamelCaseDotPath(string input, string expected)
     {
         Assert.Equal(expected, CamelCasePathResolver.ToPath(input));
+    }
+
+    /// <summary>A source with no grants (deny by default); test-only.</summary>
+    private sealed class EmptyPermissionGrantSource : IPermissionGrantSource
+    {
+        public IEnumerable<PermissionGrant> Grants => [];
     }
 
     private sealed class Grants(params PermissionGrant[] grants) : IPermissionGrantSource

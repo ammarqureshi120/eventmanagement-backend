@@ -1,3 +1,4 @@
+using EventHub.Application.Common.Ports;
 using EventHub.Contracts.Audit;
 using EventHub.Domain.Users;
 using Mediator;
@@ -23,4 +24,14 @@ public interface IAuditableEvent : INotification
 
     /// <summary>Required for user-lifecycle actions (<see cref="AuditVisibilityRule.ByTargetRole"/>).</summary>
     UserRole? TargetRole => null;
+
+    /// <summary>
+    /// The actor of an action taken while the caller is still anonymous (sign-in; later reset completed and invite
+    /// accepted). When set it wins over <c>ICurrentUser</c> for the actor and for the
+    /// <see cref="AuditVisibilityRule.ByActor"/> rule (AD-14).
+    /// </summary>
+    AuditSubjectActor? SubjectActor => null;
 }
+
+/// <summary>Who performed an audited action when it is not the current caller (AD-14).</summary>
+public sealed record AuditSubjectActor(Guid Id, ActorKind Kind, Guid? OrganizationId, string Name);

@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using EventHub.Api.Endpoints.Auth;
+using EventHub.Api.Endpoints.Me;
 using EventHub.Api.Errors;
 using EventHub.Api.Hosting;
 using EventHub.Api.Logging;
@@ -30,9 +32,15 @@ try
     builder.Services.AddEventHubApplication();
     builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
+    // AD-16: the .EventHub.Session cookie, the per-request security-stamp validator and the session port.
+    builder.Services.AddEventHubAuth();
+
     // AD-17: every non-2xx under /api is an EventHubProblem with code + traceId and no internals.
     builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = EventHubProblem.Customize);
     builder.Services.AddExceptionHandler<EventHubExceptionHandler>();
+
+    // AD-4: numbers are numbers on the wire (no quoted-number reading), so the contract types them as plain integers.
+    builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.NumberHandling = JsonNumberHandling.Strict);
 
     // AD-4: OpenAPI 3.0 pinned at runtime (build time is pinned in the csproj).
     builder.Services.AddOpenApi(options => options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_0);
@@ -71,6 +79,10 @@ try
         context => context.Request.Path.StartsWithSegments("/api"),
         api => api.UseStatusCodePages());
 
+    // AD-16: after the status pages, so a bare 401 challenge becomes the session_expired problem.
+    app.UseAuthentication();
+    app.UseAuthorization();
+
     if (app.Environment.IsDevelopment())
     {
         app.MapOpenApi();
@@ -79,8 +91,10 @@ try
 
     app.MapDefaultEndpoints();
 
-    var api = app.MapGroup("/api");
+    // AD-16: every unsafe verb under /api (login included) needs a valid X-XSRF-TOKEN.
+    var api = app.MapGroup("/api").AddEndpointFilter<AntiforgeryFilter>();
     api.MapAuthEndpoints();
+    api.MapMeEndpoints();
     foreach (var module in app.Services.GetServices<IApiEndpointModule>())
     {
         module.MapEndpoints(api);

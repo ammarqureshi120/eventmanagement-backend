@@ -5,7 +5,8 @@ namespace EventHub.Application.Authorization;
 /// <summary>
 /// The single implementation of PRD §4.0 (AD-8): actor kind × <see cref="Permission"/> × data scope,
 /// composed from every registered <see cref="IPermissionGrantSource"/>. Deny by default: anything not
-/// granted is forbidden, including every anonymous call in Story 1.3.
+/// granted is forbidden. An anonymous caller passes only through an explicit Anonymous cell (Story 1.4: login in
+/// the Identity scope, <see cref="AppPermissionGrants"/>); no scope (<see cref="ScopeKind.None"/>) is never granted.
 /// </summary>
 public sealed class PermissionMatrix
 {
@@ -23,7 +24,6 @@ public sealed class PermissionMatrix
 
     public bool IsGranted(ActorKind actor, Permission permission, ScopeKind scope) =>
         !string.IsNullOrWhiteSpace(permission.Name)
-        && actor != ActorKind.Anonymous
         && scope != ScopeKind.None
         && _grants.Contains(new PermissionGrant(actor, permission, scope));
 }

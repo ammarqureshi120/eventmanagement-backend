@@ -35,4 +35,7 @@ public sealed class TestProbe
     public void ValidatorRan() => Interlocked.Increment(ref _validatorRuns);
 
     public void HandlerRan() => Interlocked.Increment(ref _handlerRuns);
+
+    /// <summary>SQL session-context <c>Scope</c> values seen by <c>SessionContextProbe</c> during sign-ins.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string?> SignInSessionScopes { get; } = new();
 }

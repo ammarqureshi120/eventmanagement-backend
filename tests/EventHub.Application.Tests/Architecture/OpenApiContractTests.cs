@@ -42,6 +42,23 @@ public sealed class OpenApiContractTests
         Assert.True(offenders.Count == 0, "Operations without exactly one tag: " + string.Join(", ", offenders));
     }
 
+    /// <summary>Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays.</summary>
+    [Theory]
+    [InlineData("GET /api/auth/antiforgery", "GetAntiforgeryToken", "Auth")]
+    [InlineData("POST /api/auth/login", "Login", "Auth")]
+    [InlineData("POST /api/auth/logout", "Logout", "Auth")]
+    [InlineData("GET /api/me", "GetMe", "Me")]
+    public void Operations_WhenRead_IncludeTheAuthAndMeOperations(string route, string operationId, string tag)
+    {
+        using var document = LoadDocument();
+        var (method, path) = (route.Split(' ')[0].ToLowerInvariant(), route.Split(' ')[1]);
+
+        var operation = document.RootElement.GetProperty("paths").GetProperty(path).GetProperty(method);
+
+        Assert.Equal(operationId, operation.GetProperty("operationId").GetString());
+        Assert.Equal(tag, Assert.Single(operation.GetProperty("tags").EnumerateArray()).GetString());
+    }
+
     private static IEnumerable<(string Route, string? OperationId, int TagCount)> Operations(JsonDocument document)
     {
         if (!document.RootElement.TryGetProperty("paths", out var paths))

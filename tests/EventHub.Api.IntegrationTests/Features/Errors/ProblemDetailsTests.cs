@@ -53,7 +53,7 @@ public sealed class ProblemDetailsTests(LocalSqlFixture sql)
     {
         sql.SkipIfUnavailable();
         await using var factory = new EventHubApiFactory(sql.ConnectionString, testApi: true);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateApiClient();
 
         var response = await client.PostAsJsonAsync("/api/test/items", new { name = "" }, TestContext.Current.CancellationToken);
 
@@ -176,7 +176,8 @@ public sealed class ProblemDetailsTests(LocalSqlFixture sql)
 
     private static HttpClient Client(EventHubApiFactory factory, string actor)
     {
-        var client = factory.CreateClient();
+        // Unsafe verbs carry a valid antiforgery token (AD-16 group filter), as the SPA sends them.
+        var client = factory.CreateApiClient();
         client.DefaultRequestHeaders.Add(TestActor.Header, actor);
         return client;
     }
