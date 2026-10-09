@@ -35,7 +35,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire 13.5.4 (local dev only; SQL Server and Mailpit run natively, no containers)">
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.5.4" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.6.1" />
   </ItemGroup>
 
   <ItemGroup Label="ServiceDefaults (from the aspire-servicedefaults 13.5.4 template)">
