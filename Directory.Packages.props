@@ -39,8 +39,8 @@
   </ItemGroup>
 
   <ItemGroup Label="ServiceDefaults (from the aspire-servicedefaults 13.5.4 template)">
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.8.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.8.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
