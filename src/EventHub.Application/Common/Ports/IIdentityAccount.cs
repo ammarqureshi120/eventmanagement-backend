@@ -1,3 +1,4 @@
+using EventHub.Application.Common.Errors;
 using EventHub.Domain.Users;
 
 namespace EventHub.Application.Common.Ports;
@@ -5,7 +6,8 @@ namespace EventHub.Application.Common.Ports;
 /// <summary>
 /// The only way Application reads or changes credential state on a User (AD-26). The Infrastructure adapter runs
 /// the ASP.NET Identity stores in the Identity scope, each call on its own connection, outside the caller's
-/// transaction. Reset and the password policy arrive in Story 1.6.
+/// transaction. Story 1.6 adds password reset by token; the password policy itself is Application's
+/// (<c>Auth.PasswordPolicy</c>), applied by the caller between the token check and the reset.
 /// </summary>
 public interface IIdentityAccount
 {
@@ -34,6 +36,21 @@ public interface IIdentityAccount
     /// connection, so callers invoke it only after their command has committed; it honours the token.
     /// </summary>
     Task RotateSecurityStampAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks a raw password-reset token without changing anything (FR4, AD-16): unknown, used
+    /// (<see cref="TokenInvalidReason.Used"/>), expired or superseded (<see cref="TokenInvalidReason.Expired"/>), or
+    /// for a user who is not Active is invalid. A valid token returns the account it resets.
+    /// </summary>
+    Task<PasswordResetResult> CheckResetTokenAsync(string token, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resets the password with a raw reset token, in one Identity-scope transaction (FR4, AD-16): checks the token as
+    /// <see cref="CheckResetTokenAsync"/> does, marks it used with a conditional update (so it works exactly once,
+    /// even under concurrent submits), stores the new password hash, rotates the security stamp (every session of
+    /// the user ends on its next request) and clears any lockout. The caller has already applied the password policy.
+    /// </summary>
+    Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default);
 
 #if EVENTHUB_SEED_TOOLS
     /// <summary>
@@ -64,6 +81,17 @@ public enum PasswordCheckOutcome
 public sealed record PasswordCheck(PasswordCheckOutcome Outcome, SessionAccount? Account)
 {
     public static PasswordCheck Failed { get; } = new(PasswordCheckOutcome.Failed, null);
+}
+
+/// <summary>
+/// The outcome of a reset-token check or reset: <see cref="Succeeded"/> with the account, or invalid with the
+/// <see cref="Reason"/> when it is known (unknown tokens and inactive users carry none).
+/// </summary>
+public sealed record PasswordResetResult(bool Succeeded, SessionAccount? Account, TokenInvalidReason? Reason)
+{
+    public static PasswordResetResult Valid(SessionAccount account) => new(true, account, null);
+
+    public static PasswordResetResult Invalid(TokenInvalidReason? reason = null) => new(false, null, reason);
 }
 
 /// <summary>

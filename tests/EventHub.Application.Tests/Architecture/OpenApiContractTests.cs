@@ -42,11 +42,16 @@ public sealed class OpenApiContractTests
         Assert.True(offenders.Count == 0, "Operations without exactly one tag: " + string.Join(", ", offenders));
     }
 
-    /// <summary>Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays.</summary>
+    /// <summary>
+    /// Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays. Story 1.6
+    /// adds forgot and reset password under tag Auth.
+    /// </summary>
     [Theory]
     [InlineData("GET /api/auth/antiforgery", "GetAntiforgeryToken", "Auth")]
     [InlineData("POST /api/auth/login", "Login", "Auth")]
     [InlineData("POST /api/auth/logout", "Logout", "Auth")]
+    [InlineData("POST /api/auth/forgot-password", "ForgotPassword", "Auth")]
+    [InlineData("POST /api/auth/reset-password", "ResetPassword", "Auth")]
     [InlineData("GET /api/me", "GetMe", "Me")]
     public void Operations_WhenRead_IncludeTheAuthAndMeOperations(string route, string operationId, string tag)
     {

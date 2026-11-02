@@ -50,7 +50,7 @@ public sealed partial class EventHubExceptionHandler(
         }
 
         httpContext.Response.StatusCode = mapped.Status;
-        var problem = EventHubProblem.Create(httpContext, mapped.Status, mapped.Code, mapped.Errors);
+        var problem = EventHubProblem.Create(httpContext, mapped.Status, mapped.Code, mapped.Errors, mapped.Reason);
 
         // Never pass the exception on: no writer may echo its message or stack (NFR4).
         if (await problemDetailsService.TryWriteAsync(new ProblemDetailsContext { HttpContext = httpContext, ProblemDetails = problem }))

@@ -53,7 +53,7 @@ public sealed class PermissionAndValidationTests
     }
 
     [Fact]
-    public void ProductionGrants_WhenRead_AreExactlyTheStory14And15Cells_IncludingReLoginForSignedInCallers()
+    public void ProductionGrants_WhenRead_AreExactlyTheStory14To16Cells_IncludingReLoginForSignedInCallers()
     {
         var matrix = new PermissionMatrix([new AppPermissionGrants()]);
 
@@ -64,15 +64,35 @@ public sealed class PermissionAndValidationTests
                 new PermissionGrant(ActorKind.OrgAdministrator, AppPermissions.AuthLogin, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthLogin, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthLogout, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.Anonymous, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.OrgAdministrator, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.Anonymous, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.OrgAdministrator, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+                new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthResetPassword, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
                 new PermissionGrant(ActorKind.System, AppPermissions.UsersDeactivate, ScopeKind.System),
             ],
             new AppPermissionGrants().Grants);
         Assert.True(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogin, ScopeKind.Identity));
+        foreach (var actor in new[] { ActorKind.Anonymous, ActorKind.SystemAdministrator, ActorKind.OrgAdministrator, ActorKind.EventManager })
+        {
+            Assert.True(matrix.IsGranted(actor, AppPermissions.AuthForgotPassword, ScopeKind.Identity));
+            Assert.True(matrix.IsGranted(actor, AppPermissions.AuthResetPassword, ScopeKind.Identity));
+        }
+
+        Assert.False(matrix.IsGranted(ActorKind.System, AppPermissions.AuthResetPassword, ScopeKind.Identity));
         Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.MeGet, ScopeKind.None));
         Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogout, ScopeKind.Identity));
         Assert.False(matrix.IsGranted(ActorKind.OrgAdministrator, AppPermissions.MeGet, ScopeKind.Tenant));
-        Assert.Single(new AppPermissionGrants().Grants, grant => grant.Actor == ActorKind.Anonymous);
+        Assert.Equal(
+            [AppPermissions.AuthLogin, AppPermissions.AuthForgotPassword, AppPermissions.AuthResetPassword],
+            new AppPermissionGrants().Grants.Where(grant => grant.Actor == ActorKind.Anonymous).Select(grant => grant.Permission));
+        Assert.All(
+            new AppPermissionGrants().Grants.Where(grant => grant.Actor == ActorKind.Anonymous),
+            grant => Assert.Equal(ScopeKind.Identity, grant.Scope));
     }
 
     [Theory]

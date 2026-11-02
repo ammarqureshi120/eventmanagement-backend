@@ -4,6 +4,7 @@ using EventHub.Application.Common.Ports;
 using EventHub.Domain.Users;
 using EventHub.Infrastructure.Persistence.Scopes;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -13,7 +14,9 @@ namespace EventHub.Infrastructure.Identity;
 /// AD-26 adapter: credential reads and changes run the Identity stores in the Identity scope (AD-7). Each call opens
 /// its own Identity-scope context and connection, so it does not join the caller's transaction; callers that must
 /// order it after their command (logout, deactivation) call it after the commit. Lockout (AD-16) uses the
-/// configured <see cref="LockoutOptions"/> and is timed by <see cref="IClock"/>.
+/// configured <see cref="LockoutOptions"/> and is timed by <see cref="IClock"/>. Password reset (Story 1.6) runs the
+/// token check, the single-use mark, the new hash, the stamp rotation and the lockout reset in one Identity-scope
+/// transaction.
 /// </summary>
 public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIdentityAccount
 {
@@ -103,6 +106,66 @@ public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIden
         }, cancellationToken);
     }
 
+    public async Task<PasswordResetResult> CheckResetTokenAsync(string token, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var hash = UserTokenCodec.HashOf(token);
+        if (hash is null)
+        {
+            return PasswordResetResult.Invalid();
+        }
+
+        await using var scope = scopes.OpenIdentity();
+        var (result, _, _) = await FindResetTargetAsync(scope, Store(scope), hash, clock.UtcNow, cancellationToken);
+        return result;
+    }
+
+    public async Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(newPassword);
+        cancellationToken.ThrowIfCancellationRequested();
+        var hash = UserTokenCodec.HashOf(token);
+        if (hash is null)
+        {
+            return PasswordResetResult.Invalid();
+        }
+
+        await using var scope = scopes.OpenIdentity();
+        var users = scope.Services.GetRequiredService<UserManager<User>>();
+        var store = Store(scope);
+        var db = scope.Db;
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+        var now = clock.UtcNow;
+
+        var (result, resetToken, user) = await FindResetTargetAsync(scope, store, hash, now, cancellationToken);
+        if (!result.Succeeded || resetToken is null || user is null)
+        {
+            return result;
+        }
+
+        // Single use (AD-16): only the request whose conditional update wins may go on; a concurrent submit of the
+        // same token waits on the row lock, then matches no row.
+        var claimed = await db.UserTokens
+            .Where(row => row.Id == resetToken.Id && row.UsedAtUtc == null && row.ExpiresAtUtc > now)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.UsedAtUtc, now), cancellationToken);
+        if (claimed == 0)
+        {
+            return PasswordResetResult.Invalid(TokenInvalidReason.Used);
+        }
+
+        var stamp = NewSecurityStamp();
+        await UpdateAsync(scope, store, user, async () =>
+        {
+            await store.SetPasswordHashAsync(user, users.PasswordHasher.HashPassword(user, newPassword), cancellationToken);
+            await store.SetSecurityStampAsync(user, stamp, cancellationToken);
+            await ResetFailuresAsync(store, user, cancellationToken);
+            return true;
+        }, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+        return PasswordResetResult.Valid(Account(user, stamp));
+    }
+
 #if EVENTHUB_SEED_TOOLS
     /// <summary>Seed-only (AD-31): stores Identity's one-way hash; skips the password policy (Stories 1.4-1.6).</summary>
     public async Task SetPasswordForSeedAsync(Guid userId, string password, CancellationToken cancellationToken = default)
@@ -118,6 +181,41 @@ public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIden
         Ensure(await users.UpdateSecurityStampAsync(user));
     }
 #endif
+
+    /// <summary>
+    /// The reset token with <paramref name="hash"/> and its user, when both are good: the token exists for purpose
+    /// reset, is unused and unexpired (a superseded token was expired on supersede), and the user is Active.
+    /// </summary>
+    private static async Task<(PasswordResetResult Result, UserToken? Token, User? User)> FindResetTargetAsync(
+        DbScope scope, UserStore store, byte[] hash, DateTime now, CancellationToken cancellationToken)
+    {
+        var token = await scope.Db.UserTokens
+            .AsNoTracking()
+            .SingleOrDefaultAsync(row => row.TokenHash == hash && row.Purpose == UserTokenPurpose.Reset, cancellationToken);
+        if (token is null)
+        {
+            return (PasswordResetResult.Invalid(), null, null);
+        }
+
+        if (token.UsedAtUtc is not null)
+        {
+            return (PasswordResetResult.Invalid(TokenInvalidReason.Used), null, null);
+        }
+
+        if (token.ExpiresAtUtc <= now)
+        {
+            return (PasswordResetResult.Invalid(TokenInvalidReason.Expired), null, null);
+        }
+
+        var user = await store.FindByIdAsync(token.UserId.ToString(), cancellationToken);
+        if (user is null || user.Status != UserStatus.Active)
+        {
+            return (PasswordResetResult.Invalid(), null, null);
+        }
+
+        var stamp = await store.GetSecurityStampAsync(user, cancellationToken) ?? string.Empty;
+        return (PasswordResetResult.Valid(Account(user, stamp)), token, user);
+    }
 
     private static async Task<bool> IsLockedOutAsync(UserStore store, User user, DateTime now, CancellationToken cancellationToken) =>
         await store.GetLockoutEnabledAsync(user, cancellationToken)

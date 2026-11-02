@@ -1,3 +1,4 @@
+using EventHub.Application.Common.Errors;
 using EventHub.Application.Common.Validation;
 using FluentValidation;
 using Mediator;
@@ -6,7 +7,9 @@ namespace EventHub.Application.Common.Behaviors;
 
 /// <summary>
 /// Pipeline step 3 (AD-5): runs every FluentValidation validator of the message; any failure becomes 400
-/// <c>validation</c> with camelCase dot-path keys (AD-17). The server is the authority (NFR-23).
+/// <c>validation</c> with camelCase dot-path keys (AD-17). The server is the authority (NFR-23). A failure carrying
+/// <see cref="TokenInvalidException.ValidationErrorCode"/> wins over every field failure: the request is
+/// <c>token_invalid</c> instead (AD-17 decision order).
 /// </summary>
 public sealed class ValidationBehavior<TMessage, TResponse>(IEnumerable<IValidator<TMessage>> validators)
     : IPipelineBehavior<TMessage, TResponse>
@@ -23,6 +26,11 @@ public sealed class ValidationBehavior<TMessage, TResponse>(IEnumerable<IValidat
         {
             var result = await validator.ValidateAsync(message, cancellationToken);
             failures.AddRange(result.Errors);
+        }
+
+        if (failures.Exists(failure => failure.ErrorCode == TokenInvalidException.ValidationErrorCode))
+        {
+            throw new TokenInvalidException();
         }
 
         if (failures.Count > 0)

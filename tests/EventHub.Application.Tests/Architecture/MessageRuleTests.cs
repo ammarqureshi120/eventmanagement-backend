@@ -44,17 +44,22 @@ public sealed class MessageRuleTests
         Assert.True(offenders.Count == 0, "Static Permission missing or empty: " + string.Join(", ", offenders));
     }
 
-    /// <summary>Story 1.4: login, logout and me carry their permissions, and the Identity-scoped ones are granted only there.</summary>
+    /// <summary>
+    /// Story 1.4: login, logout and me carry their permissions, and the Identity-scoped ones are granted only there.
+    /// Story 1.6 adds forgot and reset password (Identity scope, Anonymous + System Administrator).
+    /// </summary>
     [Fact]
     public void Story14Messages_WhenScanned_CarryTheirPermissionAndScope()
     {
         Assert.Equal(AppPermissions.AuthLogin, PermissionOf<EventHub.Application.Auth.Login.LoginCommand>.Value);
         Assert.Equal(AppPermissions.AuthLogout, PermissionOf<EventHub.Application.Auth.Logout.LogoutCommand>.Value);
         Assert.Equal(AppPermissions.MeGet, PermissionOf<EventHub.Application.Me.GetMe.GetMeQuery>.Value);
+        Assert.Equal(AppPermissions.AuthForgotPassword, PermissionOf<EventHub.Application.Auth.ForgotPassword.ForgotPasswordCommand>.Value);
+        Assert.Equal(AppPermissions.AuthResetPassword, PermissionOf<EventHub.Application.Auth.ResetPassword.ResetPasswordCommand>.Value);
 
         var identityScoped = Messages().Where(type => typeof(EventHub.Application.Common.Tenancy.IIdentityScoped).IsAssignableFrom(type)).ToList();
         Assert.Equal(
-            ["LoginCommand", "LogoutCommand"],
+            ["ForgotPasswordCommand", "LoginCommand", "LogoutCommand", "ResetPasswordCommand"],
             identityScoped.Select(type => type.Name).Order(StringComparer.Ordinal));
         var grants = new AppPermissionGrants().Grants.ToList();
         foreach (var type in identityScoped)

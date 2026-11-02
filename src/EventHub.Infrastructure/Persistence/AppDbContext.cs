@@ -3,6 +3,8 @@ using EventHub.Application.Common.Ports;
 using EventHub.Domain.Audit;
 using EventHub.Domain.Common;
 using EventHub.Domain.Users;
+using EventHub.Infrastructure.Identity;
+using EventHub.Infrastructure.Outbox;
 using EventHub.Infrastructure.Persistence.Configurations;
 using EventHub.Infrastructure.Persistence.Conventions;
 using EventHub.Infrastructure.Persistence.Scopes;
@@ -28,6 +30,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, ScopeAc
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
 
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
+    /// <summary>AD-16: global table, Identity scope only (token issuer, reset). Not on <see cref="IAppDbContext"/>.</summary>
+    public DbSet<UserToken> UserTokens => Set<UserToken>();
+
+    /// <summary>AD-15: global table; inserted by command scopes, claimed only in the System scope. Not on <see cref="IAppDbContext"/>.</summary>
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     public DataScope DataScope => scopeAccessor.Current;
 

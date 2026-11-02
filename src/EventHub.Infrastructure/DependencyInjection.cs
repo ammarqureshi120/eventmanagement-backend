@@ -3,6 +3,7 @@ using EventHub.Domain.Users;
 using EventHub.Infrastructure.Email;
 using EventHub.Infrastructure.Identity;
 using EventHub.Infrastructure.Ids;
+using EventHub.Infrastructure.Outbox;
 using EventHub.Infrastructure.Persistence;
 using EventHub.Infrastructure.Persistence.Interceptors;
 using EventHub.Infrastructure.Persistence.Readers;
@@ -79,6 +80,28 @@ public static class DependencyInjection
             .AddUserStore<UserStore>();
         services.AddScoped<IIdentityAccount, IdentityAccount>();
 
+        // AD-15 / AD-16 (Story 1.6): emailed tokens and the transactional outbox.
+        services.AddOptions<UserTokenOptions>()
+            .Bind(configuration.GetSection(UserTokenOptions.SectionName))
+            .Validate(
+                tokens => tokens.ResetTokenHours is >= 1 and <= 168,
+                $"{UserTokenOptions.SectionName}:ResetTokenHours must be between 1 and 168.");
+        services.AddScoped<IUserTokenIssuer, UserTokenIssuer>();
+        var app = services.AddOptions<AppOptions>()
+            .Bind(configuration.GetSection(AppOptions.SectionName))
+            .Validate(
+                options => AppOptions.IsValidPublicBaseUrl(options.PublicBaseUrl),
+                $"{AppOptions.SectionName}:PublicBaseUrl (EventHub__App__PublicBaseUrl) must be an absolute http(s) URL.");
+        services.AddOptions<OutboxOptions>()
+            .Bind(configuration.GetSection(OutboxOptions.SectionName))
+            .Validate(
+                outbox => outbox is { BatchSize: >= 1, LeaseSeconds: >= 1, PollIntervalSeconds: >= 1, SendTimeoutSeconds: >= 1, MaxAttempts: >= 1 }
+                          && outbox.SendTimeoutSeconds < outbox.LeaseSeconds,
+                $"{OutboxOptions.SectionName} values must be positive, with SendTimeoutSeconds below LeaseSeconds.");
+        services.AddSingleton<IEmailSender, MailKitEmailSender>();
+        services.AddSingleton<PasswordResetEmailRenderer>();
+        services.AddSingleton<OutboxProcessor>();
+
         // AD-20: read ports project through the request context, so the request's RLS scope applies.
         services.AddScoped<IUserProfileReader, UserProfileReader>();
 
@@ -92,6 +115,10 @@ public static class DependencyInjection
             // Order matters: hosted services start in registration order, so the schema exists before seeding.
             services.AddHostedService<DatabaseMigrator>();
             services.AddHostedService<SystemAdministratorSeeder>();
+
+            // Links in emails must never fall back to the request host (AD-15): fail at start without a base URL.
+            app.ValidateOnStart();
+            services.AddHostedService<OutboxRelay>();
         }
 
         // AD-21: one key ring for every instance and restart, stored in the global DataProtectionKeys table.

@@ -37,6 +37,9 @@ public sealed class EventHubApiFactory(
     public const string UnreachableDatabase =
         "Server=127.0.0.1,1;Database=eventhub;User Id=sa;Password=x;Encrypt=False;Connect Timeout=1";
 
+    /// <summary>The <c>EventHub:App:PublicBaseUrl</c> every test host gets unless its settings say otherwise.</summary>
+    public const string PublicBaseUrl = "https://app.eventhub.test";
+
     public FakeClock Clock { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -46,6 +49,10 @@ public sealed class EventHubApiFactory(
         builder.UseSetting("OTEL_EXPORTER_OTLP_ENDPOINT", string.Empty);
         // Keep dev user-secrets / env SMTP hosts out of tests unless a test sets one.
         builder.UseSetting("EventHub:Smtp:Host", string.Empty);
+        // Story 1.6: every environment needs the emailed-link base; the background outbox relay is off, so tests drive
+        // OutboxProcessor themselves (a test may override either through settings).
+        builder.UseSetting("EventHub:App:PublicBaseUrl", PublicBaseUrl);
+        builder.UseSetting("EventHub:Outbox:Enabled", "false");
 
         var all = settings ?? new Dictionary<string, string>();
         var isDatabaseFree = connectionString is null || connectionString == UnreachableDatabase;

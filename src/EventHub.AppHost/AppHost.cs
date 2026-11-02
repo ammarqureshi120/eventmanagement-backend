@@ -57,9 +57,18 @@ if (sysAdminDevPassword is not null)
 
 // The SPA lives in the sibling frontend repo (path is relative to this project directory).
 // WithReference(api) injects services__api__https__0 / services__api__http__0 for the Vite /api proxy.
-builder.AddViteApp("web", "../../../frontend")
+var web = builder.AddViteApp("web", "../../../frontend")
     .WithReference(api)
     .WaitFor(api)
+    // Fixed, unproxied 5173 (Vite reads PORT): emailed links must outlive an AppHost restart.
+    .WithEndpoint("http", endpoint =>
+    {
+        endpoint.Port = 5173;
+        endpoint.IsProxied = false;
+    })
     .WithExternalHttpEndpoints();
+
+// AD-15: emailed links (password reset) point at the SPA, never at the API request host.
+api.WithEnvironment("EventHub__App__PublicBaseUrl", web.GetEndpoint("http"));
 
 builder.Build().Run();

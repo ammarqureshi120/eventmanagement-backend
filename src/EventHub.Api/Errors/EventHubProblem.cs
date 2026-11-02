@@ -14,6 +14,7 @@ public static class EventHubProblem
     public const string CodeKey = "code";
     public const string TraceIdKey = "traceId";
     public const string ErrorsKey = "errors";
+    public const string ReasonKey = "reason";
 
     public static class Codes
     {
@@ -21,13 +22,14 @@ public static class EventHubProblem
         public const string InvalidCredentials = "invalid_credentials";
         public const string SessionExpired = "session_expired";
         public const string AccountDisabled = "account_disabled";
+        public const string TokenInvalid = "token_invalid";
         public const string Forbidden = "forbidden";
         public const string NotFound = "not_found";
         public const string ServerError = "server_error";
     }
 
     public static ProblemDetails Create(
-        HttpContext context, int status, string code, IReadOnlyDictionary<string, string[]>? errors = null)
+        HttpContext context, int status, string code, IReadOnlyDictionary<string, string[]>? errors = null, string? reason = null)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -42,6 +44,11 @@ public static class EventHubProblem
         if (errors is { Count: > 0 })
         {
             problem.Extensions[ErrorsKey] = errors;
+        }
+
+        if (reason is not null)
+        {
+            problem.Extensions[ReasonKey] = reason;
         }
 
         return problem;
@@ -83,6 +90,7 @@ public static class EventHubProblem
         Codes.InvalidCredentials => "Email or password is incorrect.",
         Codes.SessionExpired => "Your session has ended. Please sign in again.",
         Codes.AccountDisabled => "This account is disabled.",
+        Codes.TokenInvalid => "This reset link has expired.",
         Codes.Forbidden => "You don't have access to do that.",
         Codes.NotFound => "We couldn't find that.",
         _ => "Something went wrong on our side. Please try again.",
