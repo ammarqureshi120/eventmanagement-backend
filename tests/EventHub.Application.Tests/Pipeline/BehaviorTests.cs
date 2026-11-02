@@ -100,6 +100,9 @@ public sealed class BehaviorTests
         public void Add<TEntity>(TEntity entity)
             where TEntity : class => throw new NotSupportedException();
 
+        public Task<EventHub.Domain.Users.User?> FindUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public IReadOnlyList<IHasDomainEvents> GetAggregatesWithEvents() => [];
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);

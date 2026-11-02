@@ -20,6 +20,7 @@ public static class EventHubProblem
         public const string Validation = "validation";
         public const string InvalidCredentials = "invalid_credentials";
         public const string SessionExpired = "session_expired";
+        public const string AccountDisabled = "account_disabled";
         public const string Forbidden = "forbidden";
         public const string NotFound = "not_found";
         public const string ServerError = "server_error";
@@ -58,7 +59,7 @@ public static class EventHubProblem
         var status = problem.Status ?? context.HttpContext.Response.StatusCode;
         var code = problem.Extensions.TryGetValue(CodeKey, out var existing) && existing is string known
             ? known
-            : ProblemMapping.CodeForStatus(status);
+            : ProblemMapping.CodeForStatus(context.HttpContext, status);
 
         problem.Status = status;
         problem.Type = TypeBase + code;
@@ -81,6 +82,7 @@ public static class EventHubProblem
         Codes.Validation => "Some fields need a look.",
         Codes.InvalidCredentials => "Email or password is incorrect.",
         Codes.SessionExpired => "Your session has ended. Please sign in again.",
+        Codes.AccountDisabled => "This account is disabled.",
         Codes.Forbidden => "You don't have access to do that.",
         Codes.NotFound => "We couldn't find that.",
         _ => "Something went wrong on our side. Please try again.",

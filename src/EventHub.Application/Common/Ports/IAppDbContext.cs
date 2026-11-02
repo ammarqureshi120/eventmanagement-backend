@@ -1,4 +1,5 @@
 using EventHub.Domain.Common;
+using EventHub.Domain.Users;
 
 namespace EventHub.Application.Common.Ports;
 
@@ -17,6 +18,9 @@ public interface IAppDbContext
     /// <summary>Tracks a new aggregate or append-only record for insert on the next save.</summary>
     void Add<TEntity>(TEntity entity)
         where TEntity : class;
+
+    /// <summary>The tracked User aggregate with <paramref name="userId"/> in the request's data scope; null when none.</summary>
+    Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>Tracked aggregates that currently hold domain events.</summary>
     IReadOnlyList<IHasDomainEvents> GetAggregatesWithEvents();

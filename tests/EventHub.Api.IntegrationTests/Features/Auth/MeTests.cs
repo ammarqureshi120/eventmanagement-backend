@@ -40,7 +40,29 @@ public sealed class MeTests(LocalSqlFixture sql)
         Assert.Equal(JsonValueKind.Null, root.GetProperty("organization").ValueKind);
         Assert.True(root.GetProperty("version").GetInt32() >= 1);
         Assert.Equal(["platform", "account"], root.GetProperty("navAreas").EnumerateArray().Select(a => a.GetString()));
-        Assert.Equal(9, root.EnumerateObject().Count());
+        Assert.Equal(JsonValueKind.String, root.GetProperty("sessionExpiresAt").ValueKind);
+        Assert.Equal(10, root.EnumerateObject().Count());
+    }
+
+    /// <summary>Story 1.5 (additive): <c>sessionExpiresAt</c> = <c>iat</c> + 12 h, UTC ISO, unchanged by activity.</summary>
+    [Fact]
+    public async Task GetMe_WhenSignedIn_ReturnsSessionExpiresAtTwelveHoursAfterSignIn()
+    {
+        sql.SkipIfUnavailable();
+        var email = UniqueEmail("expiresat");
+        await using var factory = new EventHubApiFactory(sql.ConnectionString, settings: Seed(email), fakeClock: true);
+        var signedInAt = new DateTime(2026, 10, 14, 8, 30, 15, DateTimeKind.Utc);
+        factory.Clock.UtcNow = signedInAt;
+        using var client = factory.CreateApiClient();
+        await SignInAsync(client, email);
+
+        factory.Clock.UtcNow = signedInAt.AddMinutes(20);
+        var response = await client.GetAsync("/api/me", TestContext.Current.CancellationToken);
+
+        var raw = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.StatusCode == HttpStatusCode.OK, raw);
+        using var me = JsonDocument.Parse(raw);
+        Assert.Equal("2026-10-14T20:30:15Z", me.RootElement.GetProperty("sessionExpiresAt").GetString());
     }
 
     [Fact]

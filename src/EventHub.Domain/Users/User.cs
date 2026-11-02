@@ -99,6 +99,22 @@ public sealed class User : IHasDomainEvents, ITimestamped
                && !trimmed.Any(char.IsWhiteSpace);
     }
 
+    /// <summary>
+    /// FR2: an Active or Invited user becomes Inactive and raises <see cref="UserDeactivated"/>. Already Inactive:
+    /// nothing changes and no event is raised. Ending the user's sessions (security-stamp rotation) is the
+    /// caller's job, after the command commits (AD-16).
+    /// </summary>
+    public void Deactivate()
+    {
+        if (Status == UserStatus.Inactive)
+        {
+            return;
+        }
+
+        Status = UserStatus.Inactive;
+        _domainEvents.Add(new UserDeactivated(Id, Role, OrganizationId));
+    }
+
     public void ClearDomainEvents() => _domainEvents.Clear();
 
     private static string RequireEmail(string email) =>

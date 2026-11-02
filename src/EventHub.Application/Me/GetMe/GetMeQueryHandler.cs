@@ -1,3 +1,4 @@
+using EventHub.Application.Auth;
 using EventHub.Application.Common.Errors;
 using EventHub.Application.Common.Ports;
 using EventHub.Contracts.Me;
@@ -7,13 +8,18 @@ using WireRole = EventHub.Contracts.Users.UserRole;
 
 namespace EventHub.Application.Me.GetMe;
 
-/// <summary>Projects the caller's profile and the nav areas of their role (AD-9, AD-20).</summary>
+/// <summary>
+/// Projects the caller's profile, the nav areas of their role (AD-9, AD-20) and when the session reaches its
+/// absolute limit (<c>iat</c> + 12 h, AD-16), so the SPA can warn before it ends.
+/// </summary>
 public sealed class GetMeQueryHandler(ICurrentUser currentUser, IUserProfileReader profiles)
     : IQueryHandler<GetMeQuery, MeResponse>
 {
     public async ValueTask<MeResponse> Handle(GetMeQuery query, CancellationToken cancellationToken)
     {
         var userId = currentUser.UserId ?? throw new NotFoundException("No signed-in user.");
+        var issuedAt = currentUser.SessionIssuedAtUtc
+                       ?? throw new InvalidOperationException("The signed-in caller has no session sign-in time.");
         var profile = await profiles.FindAsync(userId, cancellationToken)
                       ?? throw new NotFoundException("The signed-in user was not found.");
 
@@ -27,7 +33,8 @@ public sealed class GetMeQueryHandler(ICurrentUser currentUser, IUserProfileRead
             // Organizations arrive in Epic 2; a System Administrator never has one.
             Organization: null,
             profile.Version,
-            NavAreasFor(profile.Role));
+            NavAreasFor(profile.Role),
+            SessionPolicy.ExpiresAt(issuedAt));
     }
 
     /// <summary>

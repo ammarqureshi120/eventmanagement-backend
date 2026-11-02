@@ -49,6 +49,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, ScopeAc
 
     void IAppDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 
+    public Task<User?> FindUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        Users.SingleOrDefaultAsync(user => user.Id == userId, cancellationToken);
+
     public IReadOnlyList<IHasDomainEvents> GetAggregatesWithEvents() =>
         ChangeTracker.Entries<IHasDomainEvents>()
             .Select(entry => entry.Entity)

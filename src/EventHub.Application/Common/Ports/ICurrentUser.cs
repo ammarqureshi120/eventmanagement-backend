@@ -27,4 +27,10 @@ public interface ICurrentUser
 
     /// <summary>Null for System Administrators, the System actor and anonymous callers.</summary>
     Guid? OrganizationId { get; }
+
+    /// <summary>
+    /// When the caller's session was signed in (the <c>iat</c> claim, UTC); null without a session (anonymous, the
+    /// System actor). The absolute session limit counts from it (AD-16).
+    /// </summary>
+    DateTime? SessionIssuedAtUtc { get; }
 }

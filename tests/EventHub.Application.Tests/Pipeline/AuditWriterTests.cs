@@ -62,6 +62,22 @@ public sealed partial class AuditWriterTests
         Assert.Equal(expected, Assert.Single(db.Added.OfType<AuditEntry>()).Visibility);
     }
 
+    /// <summary>Story 1.5: a System Administrator target mirrors user.signedIn: Platform, no Organization; actor System.</summary>
+    [Fact]
+    public async Task Handle_WhenSystemDeactivatesASystemAdministrator_IsPlatformWithNullOrganizationAndSystemActor()
+    {
+        var (db, writer, _) = Arrange(ActorKind.System, organizationId: null);
+
+        await writer.Handle(new Sample(AuditAction.UserDeactivated, EventOrg, UserRole.SystemAdministrator), TestContext.Current.CancellationToken);
+
+        var entry = Assert.Single(db.Added.OfType<AuditEntry>());
+        Assert.Equal(AuditEntryVisibility.Platform, entry.Visibility);
+        Assert.Null(entry.OrganizationId);
+        Assert.Equal(AuditActorType.System, entry.ActorType);
+        Assert.Null(entry.ActorId);
+        Assert.Equal("user.deactivated", entry.Action);
+    }
+
     [Fact]
     public async Task Handle_WhenUserLifecycleActionLacksTargetRole_Throws()
     {
@@ -256,6 +272,9 @@ public sealed partial class AuditWriterTests
         public void Add<TEntity>(TEntity entity)
             where TEntity : class => Added.Add(entity);
 
+        public Task<EventHub.Domain.Users.User?> FindUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public IReadOnlyList<IHasDomainEvents> GetAggregatesWithEvents() => [];
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
@@ -273,6 +292,8 @@ public sealed partial class AuditWriterTests
         public string DisplayName => displayName;
 
         public Guid? OrganizationId => organizationId;
+
+        public DateTime? SessionIssuedAtUtc => null;
     }
 
     private sealed class FixedIds(Guid id) : IIdGenerator

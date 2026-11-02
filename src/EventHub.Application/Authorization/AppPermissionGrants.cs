@@ -13,12 +13,17 @@ public static class AppPermissions
 
     /// <summary>Read the caller's own identity, role and nav areas (FR5).</summary>
     public static readonly Permission MeGet = new("Me.Get");
+
+    /// <summary>Deactivate a User (FR2). Story 1.5: System actor only, no endpoint (Epic 2 adds the UI and API).</summary>
+    public static readonly Permission UsersDeactivate = new("Users.Deactivate");
 }
 
 /// <summary>
 /// The production cells of PRD §4.0 (AD-8), added story by story. Login runs in the Identity scope and is the only
 /// Anonymous cell; signed-in callers hold it too, so signing in again replaces the session instead of failing; logout runs in the Identity scope too (its audit insert and the stamp rotation are Identity work);
-/// <c>/api/me</c> runs in the System Administrator's Platform scope.
+/// <c>/api/me</c> runs in the System Administrator's Platform scope. Story 1.5: deactivation is granted only to the
+/// System actor in the System scope (the test Arrange hook; the Identity scope may not insert <c>user.deactivated</c>
+/// audit rows under RLS).
 /// </summary>
 public sealed class AppPermissionGrants : IPermissionGrantSource
 {
@@ -30,5 +35,6 @@ public sealed class AppPermissionGrants : IPermissionGrantSource
         new(ActorKind.EventManager, AppPermissions.AuthLogin, ScopeKind.Identity),
         new(ActorKind.SystemAdministrator, AppPermissions.AuthLogout, ScopeKind.Identity),
         new(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
+        new(ActorKind.System, AppPermissions.UsersDeactivate, ScopeKind.System),
     ];
 }

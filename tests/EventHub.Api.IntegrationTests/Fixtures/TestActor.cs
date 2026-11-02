@@ -26,6 +26,9 @@ public sealed class TestActor(IHttpContextAccessor accessor) : ICurrentUser
 
     public Guid? OrganizationId => Parsed.OrganizationId;
 
+    /// <summary>The test actor has no session cookie, so no sign-in time.</summary>
+    public DateTime? SessionIssuedAtUtc => null;
+
     public static string SysAdmin => "sysadmin";
 
     public static string OrgAdmin(Guid organizationId) => $"orgadmin:{organizationId}";

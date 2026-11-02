@@ -145,8 +145,15 @@ public sealed class UserStore(AppDbContext db) :
     public Task<int> GetAccessFailedCountAsync(User user, CancellationToken cancellationToken) =>
         Task.FromResult(Credential<int>(user, UserCredentialProperties.AccessFailedCount).CurrentValue);
 
-    public Task<bool> GetLockoutEnabledAsync(User user, CancellationToken cancellationToken) =>
-        Task.FromResult(Credential<bool>(user, UserCredentialProperties.LockoutEnabled).CurrentValue);
+    /// <summary>
+    /// AD-16: lockout covers every principal, so this is always true whatever the stored column holds (seeded rows
+    /// have 0; no data update is needed).
+    /// </summary>
+    public Task<bool> GetLockoutEnabledAsync(User user, CancellationToken cancellationToken)
+    {
+        NotNull(user);
+        return Task.FromResult(true);
+    }
 
     public Task SetLockoutEnabledAsync(User user, bool enabled, CancellationToken cancellationToken)
     {

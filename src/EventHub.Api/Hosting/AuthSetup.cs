@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using EventHub.Application.Auth;
 using EventHub.Application.Common.Ports;
 using EventHub.Domain.Users;
 using Microsoft.AspNetCore.Authentication;
@@ -38,7 +39,10 @@ public static class SessionClaims
 /// AD-16 cookie session: <c>.EventHub.Session</c> (HttpOnly, SameSite=Lax, Secure whenever the request is HTTPS,
 /// path <c>/</c>), 401/403 instead of redirects on every path, and the security stamp validated on every request
 /// (<see cref="SecurityStampValidatorOptions.ValidationInterval"/> = zero) in the Identity scope, rebuilding the
-/// <c>role</c> claim from the <c>Users</c> row. Idle/absolute timeouts and lockout are Story 1.5.
+/// <c>role</c> claim from the <c>Users</c> row. Story 1.5: a 30-minute sliding idle window renewed on every
+/// authenticated request, a 12-hour absolute limit from <c>iat</c>, and inactive users rejected with
+/// <c>account_disabled</c> (<see cref="SessionPolicy"/>). All expiry reads the app <see cref="TimeProvider"/>,
+/// which follows <c>IClock</c>.
 /// </summary>
 public static class AuthSetup
 {
@@ -62,18 +66,45 @@ public static class AuthSetup
                 // work. Behind a TLS-terminating proxy this needs forwarded headers (deferred with hosting, 1.1 note).
                 options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 
-                options.Events.OnRedirectToLogin = context => Status(context, StatusCodes.Status401Unauthorized);
+                // AD-16: idle window; the validator renews the ticket on every authenticated request.
+                options.ExpireTimeSpan = SessionPolicy.IdleTimeout;
+                options.SlidingExpiration = true;
+
+                options.Events.OnRedirectToLogin = Unauthorized;
                 options.Events.OnRedirectToAccessDenied = context => Status(context, StatusCodes.Status403Forbidden);
                 options.Events.OnRedirectToLogout = _ => Task.CompletedTask;
                 options.Events.OnRedirectToReturnUrl = _ => Task.CompletedTask;
                 options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync;
             });
 
+        // The cookie handler's "now" (ticket issue and expiry) is the IClock-backed app TimeProvider.
+        services.AddOptions<CookieAuthenticationOptions>(Scheme)
+            .Configure<TimeProvider>((options, time) => options.TimeProvider = time);
+
         services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.Zero);
         services.AddScoped<ISecurityStampValidator, SessionStampValidator>();
         services.AddAuthorization();
         services.AddScoped<ISessionSignIn, SessionSignIn>();
         return services;
+    }
+
+    /// <summary>
+    /// 401 for every challenge. A request that still carries a session cookie the handler refused (idle window
+    /// passed, unreadable ticket) gets that cookie deleted too, with the scheme's own cookie options, unless a
+    /// sign-out on this request already deleted it (AD-16: every rejection deletes the cookie).
+    /// </summary>
+    private static Task Unauthorized(RedirectContext<CookieAuthenticationOptions> context)
+    {
+        var options = context.Options;
+        var name = options.Cookie.Name!;
+        var alreadyDeleted = context.Response.Headers.SetCookie
+            .Any(value => value is not null && value.StartsWith(name + "=", StringComparison.Ordinal));
+        if (!alreadyDeleted && options.CookieManager.GetRequestCookie(context.HttpContext, name) is not null)
+        {
+            options.CookieManager.DeleteCookie(context.HttpContext, name, options.Cookie.Build(context.HttpContext));
+        }
+
+        return Status(context, StatusCodes.Status401Unauthorized);
     }
 
     private static Task Status(RedirectContext<CookieAuthenticationOptions> context, int status)
@@ -104,6 +135,13 @@ public static class SessionPrincipal
         return new ClaimsPrincipal(identity);
     }
 
+    /// <summary>The UTC time an <c>iat</c> claim value (Unix seconds) stands for; null when it is missing or unreadable.</summary>
+    public static DateTime? IssuedAtUtc(string? issuedAt) =>
+        long.TryParse(issuedAt, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
+        && seconds >= 0 && seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime
+            : null;
+
     /// <summary>Unix seconds, as the <c>iat</c> claim carries them.</summary>
     public static string IssuedAt(DateTime utcNow) =>
         new DateTimeOffset(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc)).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
@@ -112,15 +150,24 @@ public static class SessionPrincipal
 /// <summary>
 /// The security-stamp validator (AD-16). Runs on every request (interval zero) through
 /// <see cref="IIdentityAccount.FindSessionAccountAsync"/>, which reads the <c>Users</c> row in the Identity scope on
-/// its own connection. A missing user or a stamp that no longer matches rejects the cookie (it is also deleted);
-/// otherwise the principal is rebuilt from the row (fresh <c>role</c> and name, same <c>iat</c>). The cookie itself
-/// is not re-issued here.
+/// its own connection. Each rejection also deletes the cookie:
+/// <list type="bullet">
+/// <item><c>iat</c> + 12 h reached (absolute limit), a missing user or a stamp that no longer matches: a bare 401,
+/// which becomes <c>session_expired</c>.</item>
+/// <item>a user who is no longer Active: the request is marked (<see cref="DisabledItemKey"/>), so the 401 becomes
+/// <c>account_disabled</c>. Checked before the stamp, because deactivation also rotates it.</item>
+/// </list>
+/// Otherwise the principal is rebuilt from the row (fresh <c>role</c> and name, same <c>iat</c>) and the cookie is
+/// re-issued with a fresh 30-minute idle window, so idle time counts from the last authenticated request.
 /// </summary>
 public sealed class SessionStampValidator(
     IIdentityAccount accounts,
     IOptions<SecurityStampValidatorOptions> options,
     TimeProvider time) : ISecurityStampValidator
 {
+    /// <summary><c>HttpContext.Items</c> key set when the session was rejected because the user is not Active.</summary>
+    public const string DisabledItemKey = "eventhub.auth.disabled";
+
     public async Task ValidateAsync(CookieValidatePrincipalContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -136,6 +183,18 @@ public sealed class SessionStampValidator(
         var principal = context.Principal;
         var presentedStamp = principal?.FindFirstValue(SessionClaims.SecurityStamp);
         var issuedAt = principal?.FindFirstValue(SessionClaims.IssuedAt);
+        var now = time.GetUtcNow();
+        if (SessionPrincipal.IssuedAtUtc(issuedAt) is not { } issuedAtUtc
+            || now >= new DateTimeOffset(SessionPolicy.ExpiresAt(issuedAtUtc))
+            || context.Properties.ExpiresUtc is not { } idleEnd
+            || now >= idleEnd)
+        {
+            // AD-16 absolute limit (or no readable iat), or the idle window reached exactly at its end (the cookie
+            // handler only drops tickets strictly past it): ends however active the session was.
+            await RejectAsync(context);
+            return;
+        }
+
         SessionAccount? account = null;
         if (Guid.TryParse(principal?.FindFirstValue(SessionClaims.Subject), out var userId))
         {
@@ -151,15 +210,39 @@ public sealed class SessionStampValidator(
             }
         }
 
-        if (account is null || presentedStamp is null || issuedAt is null || !StampsMatch(account.SecurityStamp, presentedStamp))
+        if (account is null)
         {
-            context.RejectPrincipal();
-            await context.HttpContext.SignOutAsync(AuthSetup.Scheme);
+            await RejectAsync(context);
             return;
         }
 
-        context.ReplacePrincipal(SessionPrincipal.Create(account, issuedAt));
-        context.ShouldRenew = false;
+        if (!account.IsActive)
+        {
+            // FR2: deactivated mid-session. Before the stamp check: deactivation rotates the stamp too.
+            context.HttpContext.Items[DisabledItemKey] = true;
+            await RejectAsync(context);
+            return;
+        }
+
+        if (presentedStamp is null || !StampsMatch(account.SecurityStamp, presentedStamp))
+        {
+            await RejectAsync(context);
+            return;
+        }
+
+        context.ReplacePrincipal(SessionPrincipal.Create(account, issuedAt!));
+
+        // AD-16 sliding idle window: re-issue the cookie on every authenticated request (not only after half the
+        // window), so a request at 29 minutes keeps the session alive for another 30.
+        context.Properties.IssuedUtc = now;
+        context.Properties.ExpiresUtc = now + SessionPolicy.IdleTimeout;
+        context.ShouldRenew = true;
+    }
+
+    private static async Task RejectAsync(CookieValidatePrincipalContext context)
+    {
+        context.RejectPrincipal();
+        await context.HttpContext.SignOutAsync(AuthSetup.Scheme);
     }
 
     private static bool StampsMatch(string expected, string presented) =>

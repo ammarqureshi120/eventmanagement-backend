@@ -5,7 +5,7 @@ namespace EventHub.Api.Hosting;
 
 /// <summary>
 /// The HTTP caller (AD-26), read lazily from the claims of <c>HttpContext.User</c> that cookie authentication set:
-/// <c>sub</c>, <c>role</c>, <c>name</c> and, for Organization users (Epic 2), <c>org_id</c>. Claims only: it never
+/// <c>sub</c>, <c>role</c>, <c>name</c>, <c>iat</c> and, for Organization users (Epic 2), <c>org_id</c>. Claims only: it never
 /// calls <c>AuthenticateAsync</c> and never touches Data Protection. That matters because the chain
 /// <c>AppDbContext → ScopeAccessor → CurrentUserTenantContext → ICurrentUser</c> also runs while the key ring
 /// (stored in <c>AppDbContext</c>) is loaded to unprotect the very cookie being authenticated; at that point the
@@ -20,6 +20,11 @@ public sealed class HttpCurrentUser(IHttpContextAccessor accessor) : ICurrentUse
     public string DisplayName => Read().Name;
 
     public Guid? OrganizationId => Read().OrganizationId;
+
+    public DateTime? SessionIssuedAtUtc =>
+        Read().Kind == ActorKind.Anonymous
+            ? null
+            : SessionPrincipal.IssuedAtUtc(accessor.HttpContext?.User.FindFirstValue(SessionClaims.IssuedAt));
 
     private (ActorKind Kind, Guid? UserId, string Name, Guid? OrganizationId) Read()
     {

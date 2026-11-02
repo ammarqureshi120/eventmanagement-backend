@@ -1,3 +1,4 @@
+using EventHub.Api.Hosting;
 using EventHub.Application.Authorization;
 using EventHub.Application.Common.Errors;
 using EventHub.Application.Common.Validation;
@@ -7,7 +8,9 @@ namespace EventHub.Api.Errors;
 /// <summary>
 /// AD-17 mapping, defined once: exceptions and bare status codes to (status, code). Story 1.3 maps
 /// <c>validation</c>, <c>forbidden</c>, <c>not_found</c> and <c>server_error</c>; Story 1.4 adds
-/// <c>invalid_credentials</c> and <c>session_expired</c> (a bare 401: the cookie challenge); later stories add theirs here.
+/// <c>invalid_credentials</c> and <c>session_expired</c> (a bare 401: the cookie challenge); Story 1.5 adds
+/// <c>account_disabled</c> (the exception, or a bare 401 after the session validator marked the user inactive);
+/// later stories add theirs here.
 /// </summary>
 public static class ProblemMapping
 {
@@ -16,6 +19,7 @@ public static class ProblemMapping
     public static Mapped FromException(Exception exception) => exception switch
     {
         InvalidCredentialsException => new Mapped(StatusCodes.Status401Unauthorized, EventHubProblem.Codes.InvalidCredentials),
+        AccountDisabledException => new Mapped(StatusCodes.Status401Unauthorized, EventHubProblem.Codes.AccountDisabled),
         ForbiddenException => new Mapped(StatusCodes.Status403Forbidden, EventHubProblem.Codes.Forbidden),
         NotFoundException => new Mapped(StatusCodes.Status404NotFound, EventHubProblem.Codes.NotFound),
         RequestValidationException invalid => new Mapped(
@@ -26,6 +30,19 @@ public static class ProblemMapping
             new Mapped(badRequest.StatusCode, CodeForStatus(badRequest.StatusCode)),
         _ => new Mapped(StatusCodes.Status500InternalServerError, EventHubProblem.Codes.ServerError),
     };
+
+    /// <summary>
+    /// A bare status for this request: a 401 after the session validator rejected an inactive user
+    /// (<see cref="SessionStampValidator.DisabledItemKey"/>) is <c>account_disabled</c>; everything else as
+    /// <see cref="CodeForStatus(int)"/>.
+    /// </summary>
+    public static string CodeForStatus(HttpContext context, int status)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return status == StatusCodes.Status401Unauthorized && context.Items.ContainsKey(SessionStampValidator.DisabledItemKey)
+            ? EventHubProblem.Codes.AccountDisabled
+            : CodeForStatus(status);
+    }
 
     /// <summary>401 → session_expired, 400/415 → validation, 403 → forbidden, 404/405 → not_found, ≥500 → server_error; other 4xx → validation.</summary>
     public static string CodeForStatus(int status) => status switch

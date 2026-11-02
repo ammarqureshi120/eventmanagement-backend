@@ -122,7 +122,8 @@
           "role",
           "organization",
           "version",
-          "navAreas"
+          "navAreas",
+          "sessionExpiresAt"
         ],
         "type": "object",
         "properties": {
@@ -168,6 +169,10 @@
             "items": {
               "$ref": "#/components/schemas/NavArea"
             }
+          },
+          "sessionExpiresAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

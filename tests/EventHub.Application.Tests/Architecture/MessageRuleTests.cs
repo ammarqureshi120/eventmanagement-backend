@@ -65,6 +65,46 @@ public sealed class MessageRuleTests
         }
     }
 
+    /// <summary>
+    /// Story 1.5: deactivation carries its permission, is granted only to the System actor in the System scope, and no
+    /// endpoint dispatches it (no Api code outside the generated Mediator constructs the command; the contract has no
+    /// deactivate operation).
+    /// </summary>
+    [Fact]
+    public void DeactivateUserCommand_WhenScanned_IsSystemOnlyAndMappedByNoEndpoint()
+    {
+        var command = typeof(EventHub.Application.Users.Deactivate.DeactivateUserCommand);
+        Assert.True(typeof(IRequirePermission).IsAssignableFrom(command));
+        Assert.Equal(AppPermissions.UsersDeactivate, ReadPermission(command));
+        Assert.False(typeof(EventHub.Application.Common.Tenancy.IIdentityScoped).IsAssignableFrom(command));
+
+        var grant = Assert.Single(new AppPermissionGrants().Grants, grant => grant.Permission == AppPermissions.UsersDeactivate);
+        Assert.Equal(EventHub.Application.Common.Ports.ActorKind.System, grant.Actor);
+        Assert.Equal(EventHub.Application.Common.Ports.ScopeKind.System, grant.Scope);
+
+        using var api = ModuleDefinition.ReadModule(typeof(EventHub.Api.Hosting.AuthSetup).Assembly.Location);
+        var constructors = api.GetTypes()
+            .Where(type => type.Namespace is not { } ns || !(ns == "Mediator" || ns.StartsWith("Mediator.", StringComparison.Ordinal)))
+            .SelectMany(type => type.Methods)
+            .Where(method => method.HasBody)
+            .Where(method => method.Body.Instructions.Any(instruction =>
+                instruction.OpCode == OpCodes.Newobj
+                && instruction.Operand is MethodReference { DeclaringType: var declaring } && declaring.FullName == command.FullName))
+            .Select(method => method.FullName)
+            .ToList();
+        Assert.Empty(constructors);
+
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "EventHub.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+        var contract = File.ReadAllText(Path.Combine(root.FullName, "openapi", "openapi.json"));
+        Assert.DoesNotContain("deactivat", contract, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void PermissionOf_WhenTypeLacksIRequirePermission_IsNullSoAuthorizationFailsClosed()
     {

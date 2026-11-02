@@ -1,9 +1,13 @@
 #if EVENTHUB_SEED_TOOLS
 using System.Net;
 using System.Net.Http.Json;
+using EventHub.Application.Common.Ports;
+using EventHub.Application.Users.Deactivate;
 using EventHub.Domain.Users;
 using EventHub.Infrastructure.Persistence.Scopes;
+using Mediator;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EventHub.Api.IntegrationTests.Fixtures.Arrange;
 
@@ -69,6 +73,43 @@ public static class SignInArrange
             DataScope.System,
             "SELECT COUNT(*) FROM dbo.AuditEntries WHERE EntityId = @id AND Action = @action",
             ("@id", userId), ("@action", action));
+
+    /// <summary>
+    /// AD-31 / FR2 test hook (no endpoint exists in Story 1.5): dispatches <see cref="DeactivateUserCommand"/> on the
+    /// host's production Mediator as the System actor, then, only after it has committed, rotates the user's
+    /// security stamp through <see cref="IIdentityAccount"/> (deferred 1.3 ordering), so every other session of the
+    /// user dies on its next request. A rotation failure surfaces here; the deactivation stays committed.
+    /// </summary>
+    public static async Task DeactivateAsync(EventHubApiFactory factory, LocalSqlFixture sql, string email)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        var userId = await UserIdAsync(sql, email);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        using (ArrangeActor.AsSystem())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISender>()
+                .Send(new DeactivateUserCommand(userId), TestContext.Current.CancellationToken);
+        }
+
+        await using var rotation = factory.Services.CreateAsyncScope();
+        await rotation.ServiceProvider.GetRequiredService<IIdentityAccount>()
+            .RotateSecurityStampAsync(userId, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The credential columns of a user: failure count, lockout end (UTC) and status.</summary>
+    public static async Task<(int AccessFailedCount, DateTime? LockoutEndUtc, string Status)> CredentialStateAsync(LocalSqlFixture sql, Guid userId)
+    {
+        await using var connection = await sql.OpenAsync(DataScope.Identity, TestContext.Current.CancellationToken);
+        await using var command = new SqlCommand("SELECT AccessFailedCount, LockoutEndUtc, Status FROM dbo.Users WHERE Id = @id", connection);
+        command.Parameters.AddWithValue("@id", userId);
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+        return (
+            reader.GetInt32(0),
+            reader.IsDBNull(1) ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc),
+            reader.GetString(2));
+    }
 
     /// <summary>The <c>Set-Cookie</c> header of the session cookie, or null.</summary>
     public static string? SessionSetCookie(HttpResponseMessage response) =>
