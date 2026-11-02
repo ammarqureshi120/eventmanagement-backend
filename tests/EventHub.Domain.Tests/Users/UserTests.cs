@@ -63,6 +63,32 @@ public sealed class UserTests
     }
 
     [Fact]
+    public void Deactivate_WhenActive_BecomesInactiveAndRaisesOneUserDeactivated()
+    {
+        var id = Guid.NewGuid();
+        var user = User.CreateSystemAdministrator(id, "sara@example.test", "Sara", "Khan");
+
+        user.Deactivate();
+
+        Assert.Equal(UserStatus.Inactive, user.Status);
+        var raised = Assert.IsType<UserDeactivated>(Assert.Single(user.DomainEvents));
+        Assert.Equal(new UserDeactivated(id, UserRole.SystemAdministrator, null), raised);
+    }
+
+    [Fact]
+    public void Deactivate_WhenAlreadyInactive_IsANoOpWithoutASecondEvent()
+    {
+        var user = User.CreateSystemAdministrator(Guid.NewGuid(), "sara@example.test", null, null);
+        user.Deactivate();
+        user.ClearDomainEvents();
+
+        user.Deactivate();
+
+        Assert.Equal(UserStatus.Inactive, user.Status);
+        Assert.Empty(user.DomainEvents);
+    }
+
+    [Fact]
     public void AuditEntryRecord_WhenActorNameIsTwoFullNames_Accepts201Characters()
     {
         var name = new string('a', User.NameMaxLength) + " " + new string('b', User.NameMaxLength);

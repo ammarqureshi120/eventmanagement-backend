@@ -83,7 +83,7 @@ public sealed class LogoutTests(LocalSqlFixture sql)
         await using var factory = new EventHubApiFactory(sql.ConnectionString, settings: Seed(email), configureServices: services =>
         {
             services.RemoveAll<IIdentityAccount>();
-            services.AddScoped<IIdentityAccount>(sp => new FailingRotation(new IdentityAccount(sp.GetRequiredService<DbScopeFactory>())));
+            services.AddScoped<IIdentityAccount>(sp => new FailingRotation(ActivatorUtilities.CreateInstance<IdentityAccount>(sp)));
         });
         using var client = factory.CreateApiClient(out var browser);
         await SignInAsync(client, email);
@@ -113,7 +113,7 @@ public sealed class LogoutTests(LocalSqlFixture sql)
         {
             services.RemoveAll<IIdentityAccount>();
             services.AddScoped<IIdentityAccount>(sp => new AbortBeforeRotation(
-                new IdentityAccount(sp.GetRequiredService<DbScopeFactory>()),
+                ActivatorUtilities.CreateInstance<IdentityAccount>(sp),
                 sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()));
         });
         using var client = factory.CreateApiClient(out var browser);
@@ -153,7 +153,7 @@ public sealed class LogoutTests(LocalSqlFixture sql)
     /// <summary>Aborts the HTTP request (cancelling RequestAborted) right before the post-commit rotation.</summary>
     private sealed class AbortBeforeRotation(IIdentityAccount inner, Microsoft.AspNetCore.Http.IHttpContextAccessor accessor) : IIdentityAccount
     {
-        public Task<SessionAccount?> VerifyPasswordAsync(string email, string password, CancellationToken cancellationToken = default) =>
+        public Task<PasswordCheck> VerifyPasswordAsync(string email, string password, CancellationToken cancellationToken = default) =>
             inner.VerifyPasswordAsync(email, password, cancellationToken);
 
         public Task<SessionAccount?> FindSessionAccountAsync(Guid userId, CancellationToken cancellationToken = default) =>
@@ -171,7 +171,7 @@ public sealed class LogoutTests(LocalSqlFixture sql)
 
     private sealed class FailingRotation(IIdentityAccount inner) : IIdentityAccount
     {
-        public Task<SessionAccount?> VerifyPasswordAsync(string email, string password, CancellationToken cancellationToken = default) =>
+        public Task<PasswordCheck> VerifyPasswordAsync(string email, string password, CancellationToken cancellationToken = default) =>
             inner.VerifyPasswordAsync(email, password, cancellationToken);
 
         public Task<SessionAccount?> FindSessionAccountAsync(Guid userId, CancellationToken cancellationToken = default) =>

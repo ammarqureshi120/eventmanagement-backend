@@ -1,9 +1,12 @@
+using EventHub.Api.IntegrationTests.Fixtures.Arrange;
+using EventHub.Application.Common.Ports;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EventHub.Api.IntegrationTests.Fixtures;
 
@@ -16,6 +19,9 @@ namespace EventHub.Api.IntegrationTests.Fixtures;
 /// user-secrets never seed the test database.</item>
 /// <item><paramref name="testApi"/>: swaps in the test-only Mediator, grants, messages and <c>/api/test/*</c>
 /// endpoints (<see cref="TestPipeline"/>); the shipped app and <c>openapi.json</c> never see them.</item>
+/// <item><paramref name="fakeClock"/>: the production pipeline with <see cref="Clock"/> as <c>IClock</c> (and so as
+/// the app <c>TimeProvider</c>: cookie expiry, the session validator, lockout). The test API always uses it.</item>
+/// <item>The host's <c>ICurrentUser</c> is wrapped so Arrange hooks can act as System (<see cref="ArrangeActor"/>).</item>
 /// </list>
 /// </summary>
 public sealed class EventHubApiFactory(
@@ -23,7 +29,8 @@ public sealed class EventHubApiFactory(
     string environment = "Development",
     IReadOnlyDictionary<string, string>? settings = null,
     bool testApi = false,
-    Action<IServiceCollection>? configureServices = null)
+    Action<IServiceCollection>? configureServices = null,
+    bool fakeClock = false)
     : WebApplicationFactory<Program>
 {
     /// <summary>Valid but unreachable: the API boots (fail-fast needs a value) and DB checks report Unhealthy.</summary>
@@ -70,8 +77,26 @@ public sealed class EventHubApiFactory(
             {
                 TestPipeline.AddTo(services, Clock);
             }
+            else if (fakeClock)
+            {
+                services.RemoveAll<IClock>();
+                services.AddSingleton<IClock>(Clock);
+            }
 
             configureServices?.Invoke(services);
+            WrapCurrentUser(services);
         });
+    }
+
+    private static void WrapCurrentUser(IServiceCollection services)
+    {
+        var current = services.Last(descriptor => descriptor.ServiceType == typeof(ICurrentUser));
+        services.Remove(current);
+        services.AddScoped<ICurrentUser>(provider => new ArrangeAwareCurrentUser(current switch
+        {
+            { ImplementationFactory: { } factory } => (ICurrentUser)factory(provider),
+            { ImplementationInstance: ICurrentUser instance } => instance,
+            _ => (ICurrentUser)ActivatorUtilities.CreateInstance(provider, current.ImplementationType!),
+        }));
     }
 }

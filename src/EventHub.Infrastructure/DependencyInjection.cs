@@ -42,8 +42,9 @@ public static class DependencyInjection
                 $"Set ConnectionStrings__{DatabaseConnectionName} (the Aspire AppHost does this) or use user-secrets.");
         }
 
-        services.AddSingleton(TimeProvider.System);
+        // AD-12: IClock is the only "now"; the app TimeProvider (cookie expiry, session validator) reads it.
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<TimeProvider>(sp => new ClockTimeProvider(sp.GetRequiredService<IClock>()));
         services.AddSingleton<IIdGenerator, SequentialGuidGenerator>();
 
         // AD-7: data scopes. The request scope follows ITenantContext; DbScopeFactory pins child scopes.
@@ -66,7 +67,15 @@ public static class DependencyInjection
 
         // AD-26: Identity for credentials only, over the domain User row. No roles, no claims tables.
         // Any valid email is a user name (apostrophes, non-ASCII): no character allowlist.
-        services.AddIdentityCore<User>(options => options.User.AllowedUserNameCharacters = string.Empty)
+        // AD-16: lockout after 5 consecutive failures for 15 minutes, for every principal (timed by IClock in
+        // IdentityAccount, which applies these options itself).
+        services.AddIdentityCore<User>(options =>
+            {
+                options.User.AllowedUserNameCharacters = string.Empty;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+                options.Lockout.AllowedForNewUsers = true;
+            })
             .AddUserStore<UserStore>();
         services.AddScoped<IIdentityAccount, IdentityAccount>();
 

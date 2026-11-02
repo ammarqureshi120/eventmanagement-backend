@@ -56,7 +56,10 @@ public sealed class AuditWriter(IAppDbContext db, ICurrentUser currentUser, IIdG
             AuditVisibilityRule.Tenant => (AuditEntryVisibility.Tenant, notification.OrganizationId),
             AuditVisibilityRule.ByTargetRole => notification.TargetRole switch
             {
-                UserRole.OrgAdministrator or UserRole.SystemAdministrator => (AuditEntryVisibility.Platform, notification.OrganizationId),
+                UserRole.OrgAdministrator => (AuditEntryVisibility.Platform, notification.OrganizationId),
+                // AD-14 covers Org Administrator targets; a System Administrator target mirrors user.signedIn:
+                // Platform, no Organization.
+                UserRole.SystemAdministrator => (AuditEntryVisibility.Platform, null),
                 null => throw new InvalidOperationException(
                     $"Audit action {notification.Action} needs the target user's role."),
                 _ => (AuditEntryVisibility.Tenant, notification.OrganizationId),

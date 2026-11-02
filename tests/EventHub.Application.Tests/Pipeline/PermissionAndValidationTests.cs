@@ -53,7 +53,7 @@ public sealed class PermissionAndValidationTests
     }
 
     [Fact]
-    public void ProductionGrants_WhenRead_AreExactlyTheStory14Cells_IncludingReLoginForSignedInCallers()
+    public void ProductionGrants_WhenRead_AreExactlyTheStory14And15Cells_IncludingReLoginForSignedInCallers()
     {
         var matrix = new PermissionMatrix([new AppPermissionGrants()]);
 
@@ -65,6 +65,7 @@ public sealed class PermissionAndValidationTests
                 new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthLogin, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.AuthLogout, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
+                new PermissionGrant(ActorKind.System, AppPermissions.UsersDeactivate, ScopeKind.System),
             ],
             new AppPermissionGrants().Grants);
         Assert.True(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogin, ScopeKind.Identity));
@@ -158,5 +159,7 @@ public sealed class PermissionAndValidationTests
         public string DisplayName => string.Empty;
 
         public Guid? OrganizationId => organizationId;
+
+        public DateTime? SessionIssuedAtUtc => null;
     }
 }
