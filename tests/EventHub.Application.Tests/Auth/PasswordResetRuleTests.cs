@@ -3,6 +3,7 @@ using EventHub.Application.Auth.ResetPassword;
 using EventHub.Application.Common.Behaviors;
 using EventHub.Application.Common.Errors;
 using EventHub.Application.Common.Validation;
+using EventHub.Contracts.Auth;
 using EventHub.Infrastructure.Identity;
 using FluentValidation;
 using Mediator;
@@ -55,10 +56,10 @@ public sealed class PasswordResetRuleTests
     [InlineData("")]
     public async Task ValidationBehavior_WhenTheTokenIsMissing_ThrowsTokenInvalidNotValidation(string? token)
     {
-        var behavior = new ValidationBehavior<ResetPasswordCommand, Unit>([new ResetPasswordCommandValidator()]);
+        var behavior = new ValidationBehavior<ResetPasswordCommand, ResetPasswordResponse>([new ResetPasswordCommandValidator()]);
 
         var thrown = await Assert.ThrowsAsync<TokenInvalidException>(async () =>
-            await behavior.Handle(new ResetPasswordCommand(token, null), (_, _) => ValueTask.FromResult(Unit.Value), TestContext.Current.CancellationToken));
+            await behavior.Handle(new ResetPasswordCommand(token, null), (_, _) => ValueTask.FromResult(new ResetPasswordResponse("x@eventhub.test")), TestContext.Current.CancellationToken));
 
         Assert.Null(thrown.Reason);
     }
@@ -68,14 +69,14 @@ public sealed class PasswordResetRuleTests
     {
         var fieldRule = new InlineValidator<ResetPasswordCommand>();
         fieldRule.RuleFor(command => command.NewPassword).NotEmpty();
-        var behavior = new ValidationBehavior<ResetPasswordCommand, Unit>([fieldRule, new ResetPasswordCommandValidator()]);
+        var behavior = new ValidationBehavior<ResetPasswordCommand, ResetPasswordResponse>([fieldRule, new ResetPasswordCommandValidator()]);
 
         await Assert.ThrowsAsync<TokenInvalidException>(async () =>
-            await behavior.Handle(new ResetPasswordCommand(" ", null), (_, _) => ValueTask.FromResult(Unit.Value), TestContext.Current.CancellationToken));
+            await behavior.Handle(new ResetPasswordCommand(" ", null), (_, _) => ValueTask.FromResult(new ResetPasswordResponse("x@eventhub.test")), TestContext.Current.CancellationToken));
 
-        var tokenOk = new ValidationBehavior<ResetPasswordCommand, Unit>([fieldRule, new ResetPasswordCommandValidator()]);
+        var tokenOk = new ValidationBehavior<ResetPasswordCommand, ResetPasswordResponse>([fieldRule, new ResetPasswordCommandValidator()]);
         await Assert.ThrowsAsync<RequestValidationException>(async () =>
-            await tokenOk.Handle(new ResetPasswordCommand("abc", null), (_, _) => ValueTask.FromResult(Unit.Value), TestContext.Current.CancellationToken));
+            await tokenOk.Handle(new ResetPasswordCommand("abc", null), (_, _) => ValueTask.FromResult(new ResetPasswordResponse("x@eventhub.test")), TestContext.Current.CancellationToken));
     }
 
     [Fact]

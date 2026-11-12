@@ -19,7 +19,8 @@ namespace EventHub.Api.IntegrationTests.Features.Auth;
 /// <summary>
 /// FR4 / FR37 / AD-15 / AD-16 / AD-17 (Story 1.6a): forgot password always answers the same 202 and issues a hashed,
 /// single-use, 1-hour token plus an encrypted outbox email only for Active accounts; reset checks the token before the
-/// password policy, then sets the password, uses the token, rotates the stamp, clears lockout and audits once.
+/// password policy, then sets the password, uses the token, rotates the stamp, clears lockout, audits once and returns
+/// the account's email (200, Story 1.6b).
 /// </summary>
 [Collection(LocalSqlCollection.Name)]
 public sealed class PasswordResetTests(LocalSqlFixture sql)
@@ -124,7 +125,13 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
 
         var response = await ResetAsync(client, token, NewPassword);
 
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using (var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+        {
+            // Story 1.6b: the account's email comes back so the SPA can prefill sign-in.
+            Assert.Equal(email, body.RootElement.GetProperty("email").GetString(), ignoreCase: true);
+        }
+
         Assert.NotEqual(stampBefore, await SecurityStampAsync(sql, userId));
         Assert.Equal((0, (DateTime?)null), Counts(await CredentialStateAsync(sql, userId)));
         Assert.Equal(factory.Clock.UtcNow, Assert.Single(await TokensAsync(sql, userId)).UsedAtUtc);
@@ -159,7 +166,7 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
         var pending = Assert.Single(await PendingResetEmailsAsync(factory, sql, userId));
         Assert.Equal(string.Empty, pending.Message.DisplayName);
 
-        Assert.Equal(HttpStatusCode.NoContent, (await ResetAsync(client, pending.Message.Token, NewPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ResetAsync(client, pending.Message.Token, NewPassword)).StatusCode);
         await SignInAsync(client, email, NewPassword);
     }
 
@@ -190,7 +197,7 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
         Assert.Equal(0, await AuditCountAsync(sql, userId, "user.passwordResetCompleted"));
         await SignInAsync(client, email, Password);
 
-        Assert.Equal(HttpStatusCode.NoContent, (await ResetAsync(client, token, NewPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ResetAsync(client, token, NewPassword)).StatusCode);
     }
 
     [Theory]
@@ -254,7 +261,7 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
         Assert.Equal(factory.Clock.UtcNow.AddHours(1), tokens[1].ExpiresAtUtc);
 
         await AssertTokenInvalidAsync(await ResetAsync(client, older, NewPassword), "expired");
-        Assert.Equal(HttpStatusCode.NoContent, (await ResetAsync(client, newer, NewPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ResetAsync(client, newer, NewPassword)).StatusCode);
     }
 
     [Fact]
@@ -300,7 +307,7 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
             await processor.ProcessBatchAsync(TestContext.Current.CancellationToken);
         }
 
-        Assert.Equal(HttpStatusCode.NoContent, (await ResetAsync(client, token, NewPassword)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await ResetAsync(client, token, NewPassword)).StatusCode);
         var email1 = Assert.Single(sender.Sent, sent => sent.MessageId == pending.OutboxId);
 
         var lines = sink.RenderAll();
@@ -361,8 +368,8 @@ public sealed class PasswordResetTests(LocalSqlFixture sql)
 
         var responses = await Task.WhenAll(ResetAsync(first, token, NewPassword), ResetAsync(second, token, "Other-Pass-123"));
 
-        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.NoContent);
-        var loser = Assert.Single(responses, response => response.StatusCode != HttpStatusCode.NoContent);
+        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+        var loser = Assert.Single(responses, response => response.StatusCode != HttpStatusCode.OK);
         using var _ = await AssertProblemCodeAsync(loser, "token_invalid");
         Assert.Equal(1, await AuditCountAsync(sql, userId, "user.passwordResetCompleted"));
     }

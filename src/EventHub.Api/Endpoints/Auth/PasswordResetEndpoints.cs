@@ -21,7 +21,7 @@ public static class PasswordResetEndpoints
 
         auth.MapPost("/reset-password", ResetPassword)
             .WithName("ResetPassword")
-            .WithSummary("Sets a new password with the emailed reset token and ends every session of the user.");
+            .WithSummary("Sets a new password with the emailed reset token, ends every session of the user and returns the account email.");
 
         return auth;
     }
@@ -32,9 +32,9 @@ public static class PasswordResetEndpoints
         return TypedResults.Accepted((string?)null);
     }
 
-    private static async Task<NoContent> ResetPassword(ResetPasswordRequest request, ISender sender, CancellationToken cancellationToken)
+    private static async Task<Ok<ResetPasswordResponse>> ResetPassword(ResetPasswordRequest request, ISender sender, CancellationToken cancellationToken)
     {
-        await sender.Send(new ResetPasswordCommand(request.Token, request.NewPassword), cancellationToken);
-        return TypedResults.NoContent();
+        var response = await sender.Send(new ResetPasswordCommand(request.Token, request.NewPassword), cancellationToken);
+        return TypedResults.Ok(response);
     }
 }

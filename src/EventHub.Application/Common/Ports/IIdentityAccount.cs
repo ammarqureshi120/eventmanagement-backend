@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using EventHub.Application.Common.Errors;
 using EventHub.Domain.Users;
 
@@ -48,7 +49,8 @@ public interface IIdentityAccount
     /// Resets the password with a raw reset token, in one Identity-scope transaction (FR4, AD-16): checks the token as
     /// <see cref="CheckResetTokenAsync"/> does, marks it used with a conditional update (so it works exactly once,
     /// even under concurrent submits), stores the new password hash, rotates the security stamp (every session of
-    /// the user ends on its next request) and clears any lockout. The caller has already applied the password policy.
+    /// the user ends on its next request) and clears any lockout. The caller has already applied the password policy. A
+    /// success carries the account's email.
     /// </summary>
     Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default);
 
@@ -85,13 +87,40 @@ public sealed record PasswordCheck(PasswordCheckOutcome Outcome, SessionAccount?
 
 /// <summary>
 /// The outcome of a reset-token check or reset: <see cref="Succeeded"/> with the account, or invalid with the
-/// <see cref="Reason"/> when it is known (unknown tokens and inactive users carry none).
+/// <see cref="Reason"/> when it is known (unknown tokens and inactive users carry none). A success also carries the
+/// account's <see cref="Email"/>, which the reset returns so the SPA can prefill sign-in (Story 1.6b). Only the two
+/// factories build it, so a success always has both the account and the email.
 /// </summary>
-public sealed record PasswordResetResult(bool Succeeded, SessionAccount? Account, TokenInvalidReason? Reason)
+public sealed record PasswordResetResult
 {
-    public static PasswordResetResult Valid(SessionAccount account) => new(true, account, null);
+    private PasswordResetResult(bool succeeded, SessionAccount? account, TokenInvalidReason? reason, string? email)
+    {
+        Succeeded = succeeded;
+        Account = account;
+        Reason = reason;
+        Email = email;
+    }
 
-    public static PasswordResetResult Invalid(TokenInvalidReason? reason = null) => new(false, null, reason);
+    [MemberNotNullWhen(true, nameof(Account), nameof(Email))]
+    public bool Succeeded { get; }
+
+    public SessionAccount? Account { get; }
+
+    public TokenInvalidReason? Reason { get; }
+
+    public string? Email { get; }
+
+    public static PasswordResetResult Valid(SessionAccount account, string email)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        return new(true, account, null, email);
+    }
+
+    public static PasswordResetResult Invalid(TokenInvalidReason? reason = null) => new(false, null, reason, null);
+
+    /// <summary>Keeps the email out of logs.</summary>
+    public override string ToString() => $"PasswordResetResult {{ Succeeded = {Succeeded}, Reason = {Reason} }}";
 }
 
 /// <summary>

@@ -163,7 +163,7 @@ public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIden
         }, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
-        return PasswordResetResult.Valid(Account(user, stamp));
+        return PasswordResetResult.Valid(Account(user, stamp), user.Email);
     }
 
 #if EVENTHUB_SEED_TOOLS
@@ -214,7 +214,7 @@ public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIden
         }
 
         var stamp = await store.GetSecurityStampAsync(user, cancellationToken) ?? string.Empty;
-        return (PasswordResetResult.Valid(Account(user, stamp)), token, user);
+        return (PasswordResetResult.Valid(Account(user, stamp), user.Email), token, user);
     }
 
     private static async Task<bool> IsLockedOutAsync(UserStore store, User user, DateTime now, CancellationToken cancellationToken) =>

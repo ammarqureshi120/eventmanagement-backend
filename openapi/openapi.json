@@ -86,7 +86,7 @@
         "tags": [
           "Auth"
         ],
-        "summary": "Sets a new password with the emailed reset token and ends every session of the user.",
+        "summary": "Sets a new password with the emailed reset token, ends every session of the user and returns the account email.",
         "operationId": "ResetPassword",
         "requestBody": {
           "content": {
@@ -99,8 +99,15 @@
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetPasswordResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -252,6 +259,17 @@
             "type": "string"
           },
           "newPassword": {
+            "type": "string"
+          }
+        }
+      },
+      "ResetPasswordResponse": {
+        "required": [
+          "email"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
             "type": "string"
           }
         }

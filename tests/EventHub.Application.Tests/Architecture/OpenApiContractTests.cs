@@ -64,6 +64,27 @@ public sealed class OpenApiContractTests
         Assert.Equal(tag, Assert.Single(operation.GetProperty("tags").EnumerateArray()).GetString());
     }
 
+    /// <summary>
+    /// Story 1.6b: reset-password answers 200 with <c>ResetPasswordResponse { email }</c> instead of 204, so the SPA can
+    /// prefill sign-in. This replaces the 204 (a user-approved contract change, not an additive one); the only client is
+    /// the SPA, regenerated in the same story.
+    /// </summary>
+    [Fact]
+    public void ResetPassword_WhenRead_Returns200WithTheResetPasswordResponseEmail()
+    {
+        using var document = LoadDocument();
+        var responses = document.RootElement.GetProperty("paths").GetProperty("/api/auth/reset-password").GetProperty("post").GetProperty("responses");
+
+        Assert.False(responses.TryGetProperty("204", out _));
+        var schemaRef = responses.GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString();
+        Assert.Equal("#/components/schemas/ResetPasswordResponse", schemaRef);
+
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("ResetPasswordResponse");
+        Assert.Equal("string", schema.GetProperty("properties").GetProperty("email").GetProperty("type").GetString());
+        Assert.Contains("email", schema.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+    }
+
     private static IEnumerable<(string Route, string? OperationId, int TagCount)> Operations(JsonDocument document)
     {
         if (!document.RootElement.TryGetProperty("paths", out var paths))
