@@ -20,6 +20,7 @@ public static class AntiforgeryEndpoints
             .WithSummary("Issues the XSRF-TOKEN cookie the SPA echoes in the X-XSRF-TOKEN header.");
 
         auth.MapSessionEndpoints();
+        auth.MapPasswordResetEndpoints();
         return api;
     }
 

@@ -11,6 +11,12 @@ public static class AppPermissions
     /// <summary>Sign out, ending every session of the caller (FR1).</summary>
     public static readonly Permission AuthLogout = new("Auth.Logout");
 
+    /// <summary>Request a password-reset link by email (FR4, FR37).</summary>
+    public static readonly Permission AuthForgotPassword = new("Auth.ForgotPassword");
+
+    /// <summary>Set a new password with a reset token (FR4, FR37).</summary>
+    public static readonly Permission AuthResetPassword = new("Auth.ResetPassword");
+
     /// <summary>Read the caller's own identity, role and nav areas (FR5).</summary>
     public static readonly Permission MeGet = new("Me.Get");
 
@@ -23,7 +29,8 @@ public static class AppPermissions
 /// Anonymous cell; signed-in callers hold it too, so signing in again replaces the session instead of failing; logout runs in the Identity scope too (its audit insert and the stamp rotation are Identity work);
 /// <c>/api/me</c> runs in the System Administrator's Platform scope. Story 1.5: deactivation is granted only to the
 /// System actor in the System scope (the test Arrange hook; the Identity scope may not insert <c>user.deactivated</c>
-/// audit rows under RLS).
+/// audit rows under RLS). Story 1.6: forgot and reset password are Anonymous cells in the Identity scope too (a
+/// signed-in System Administrator may use them as well).
 /// </summary>
 public sealed class AppPermissionGrants : IPermissionGrantSource
 {
@@ -34,6 +41,14 @@ public sealed class AppPermissionGrants : IPermissionGrantSource
         new(ActorKind.OrgAdministrator, AppPermissions.AuthLogin, ScopeKind.Identity),
         new(ActorKind.EventManager, AppPermissions.AuthLogin, ScopeKind.Identity),
         new(ActorKind.SystemAdministrator, AppPermissions.AuthLogout, ScopeKind.Identity),
+        new(ActorKind.Anonymous, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+        new(ActorKind.SystemAdministrator, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+        new(ActorKind.OrgAdministrator, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+        new(ActorKind.EventManager, AppPermissions.AuthForgotPassword, ScopeKind.Identity),
+        new(ActorKind.Anonymous, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+        new(ActorKind.SystemAdministrator, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+        new(ActorKind.OrgAdministrator, AppPermissions.AuthResetPassword, ScopeKind.Identity),
+        new(ActorKind.EventManager, AppPermissions.AuthResetPassword, ScopeKind.Identity),
         new(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
         new(ActorKind.System, AppPermissions.UsersDeactivate, ScopeKind.System),
     ];

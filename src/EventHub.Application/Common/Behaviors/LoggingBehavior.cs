@@ -47,6 +47,7 @@ public sealed class LoggingBehavior<TMessage, TResponse>(
     private static string Outcome(Exception exception) => exception switch
     {
         InvalidCredentialsException => "invalid_credentials",
+        TokenInvalidException => "token_invalid",
         ForbiddenException => "forbidden",
         RequestValidationException => "invalid",
         NotFoundException => "not_found",

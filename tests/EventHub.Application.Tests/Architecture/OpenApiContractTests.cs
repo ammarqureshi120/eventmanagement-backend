@@ -42,11 +42,16 @@ public sealed class OpenApiContractTests
         Assert.True(offenders.Count == 0, "Operations without exactly one tag: " + string.Join(", ", offenders));
     }
 
-    /// <summary>Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays.</summary>
+    /// <summary>
+    /// Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays. Story 1.6
+    /// adds forgot and reset password under tag Auth.
+    /// </summary>
     [Theory]
     [InlineData("GET /api/auth/antiforgery", "GetAntiforgeryToken", "Auth")]
     [InlineData("POST /api/auth/login", "Login", "Auth")]
     [InlineData("POST /api/auth/logout", "Logout", "Auth")]
+    [InlineData("POST /api/auth/forgot-password", "ForgotPassword", "Auth")]
+    [InlineData("POST /api/auth/reset-password", "ResetPassword", "Auth")]
     [InlineData("GET /api/me", "GetMe", "Me")]
     public void Operations_WhenRead_IncludeTheAuthAndMeOperations(string route, string operationId, string tag)
     {
@@ -57,6 +62,27 @@ public sealed class OpenApiContractTests
 
         Assert.Equal(operationId, operation.GetProperty("operationId").GetString());
         Assert.Equal(tag, Assert.Single(operation.GetProperty("tags").EnumerateArray()).GetString());
+    }
+
+    /// <summary>
+    /// Story 1.6b: reset-password answers 200 with <c>ResetPasswordResponse { email }</c> instead of 204, so the SPA can
+    /// prefill sign-in. This replaces the 204 (a user-approved contract change, not an additive one); the only client is
+    /// the SPA, regenerated in the same story.
+    /// </summary>
+    [Fact]
+    public void ResetPassword_WhenRead_Returns200WithTheResetPasswordResponseEmail()
+    {
+        using var document = LoadDocument();
+        var responses = document.RootElement.GetProperty("paths").GetProperty("/api/auth/reset-password").GetProperty("post").GetProperty("responses");
+
+        Assert.False(responses.TryGetProperty("204", out _));
+        var schemaRef = responses.GetProperty("200").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString();
+        Assert.Equal("#/components/schemas/ResetPasswordResponse", schemaRef);
+
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("ResetPasswordResponse");
+        Assert.Equal("string", schema.GetProperty("properties").GetProperty("email").GetProperty("type").GetString());
+        Assert.Contains("email", schema.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
 
     private static IEnumerable<(string Route, string? OperationId, int TagCount)> Operations(JsonDocument document)

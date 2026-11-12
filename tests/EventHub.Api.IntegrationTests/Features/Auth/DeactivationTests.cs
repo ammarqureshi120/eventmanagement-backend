@@ -178,6 +178,12 @@ public sealed class DeactivationTests(LocalSqlFixture sql)
         public Task RotateSecurityStampAsync(Guid userId, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("Simulated stamp rotation failure.");
 
+        public Task<PasswordResetResult> CheckResetTokenAsync(string token, CancellationToken cancellationToken = default) =>
+            inner.CheckResetTokenAsync(token, cancellationToken);
+
+        public Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
+            inner.ResetPasswordAsync(token, newPassword, cancellationToken);
+
         public Task SetPasswordForSeedAsync(Guid userId, string password, CancellationToken cancellationToken = default) =>
             inner.SetPasswordForSeedAsync(userId, password, cancellationToken);
     }

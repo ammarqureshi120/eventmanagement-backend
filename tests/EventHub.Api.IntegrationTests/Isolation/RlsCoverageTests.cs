@@ -66,7 +66,7 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
         Assert.False(db.Database.HasPendingModelChanges(), "The model has changes without a migration (AD-30).");
         Assert.Empty(await db.Database.GetPendingMigrationsAsync(TestContext.Current.CancellationToken));
         Assert.Equal(
-            ["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys", "Auth_AuditIdentityInsert"],
+            ["Auth_Users", "Foundation_Rls", "Security_DataProtectionKeys", "Auth_AuditIdentityInsert", "Auth_PasswordReset"],
             (await db.Database.GetAppliedMigrationsAsync(TestContext.Current.CancellationToken)).Select(id => id[15..]));
     }
 
@@ -89,10 +89,25 @@ public sealed class RlsCoverageTests(LocalSqlFixture sql)
             """);
 
         Assert.Equal(
-            ["DataProtectionKeys", "__EFMigrationsHistory"],
+            [
+                // AD-21: the Data Protection key ring loads in every scope.
+                "DataProtectionKeys",
+                // AD-15 (Story 1.6): System-scope outbox; command scopes only insert, the relay claims in System scope.
+                // No OrganizationId, so tenant RLS has nothing to key on.
+                "OutboxMessages",
+                // AD-16 (Story 1.6): hashed reset/invite tokens, reached only in the Identity scope by hash or user id;
+                // the owning Users row is RLS-protected.
+                "UserTokens",
+                "__EFMigrationsHistory",
+            ],
             global.Except(CreatedProbeTables, StringComparer.Ordinal).Order(StringComparer.Ordinal));
-        Assert.Equal(0, await sql.ScalarAsync<int>(
-            DataScope.None, "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.DataProtectionKeys') AND name = N'OrganizationId'"));
+        foreach (var table in new[] { "DataProtectionKeys", "OutboxMessages", "UserTokens" })
+        {
+            Assert.Equal(0, await sql.ScalarAsync<int>(
+                DataScope.None,
+                "SELECT COUNT(*) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.' + @table) AND name = N'OrganizationId'",
+                ("@table", table)));
+        }
     }
 
     public static TheoryData<string> AnyScope => ["none", "identity", "platform", "tenant"];
