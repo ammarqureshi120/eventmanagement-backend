@@ -71,6 +71,25 @@ public sealed class MessageRuleTests
     }
 
     /// <summary>
+    /// Story 1.7: editing the own profile and changing the own password carry their permissions, are not Identity-scoped
+    /// messages, and are granted only to the System Administrator in the Platform scope (like <c>/api/me</c>).
+    /// </summary>
+    [Fact]
+    public void Story17Messages_WhenScanned_CarryTheirPermissionAndArePlatformScoped()
+    {
+        Assert.Equal(AppPermissions.MeEditProfile, PermissionOf<EventHub.Application.Me.UpdateMyProfile.UpdateMyProfileCommand>.Value);
+        Assert.Equal(AppPermissions.MeChangePassword, PermissionOf<EventHub.Application.Me.ChangeMyPassword.ChangeMyPasswordCommand>.Value);
+
+        var grants = new AppPermissionGrants().Grants.ToList();
+        foreach (var permission in new[] { AppPermissions.MeEditProfile, AppPermissions.MeChangePassword })
+        {
+            var grant = Assert.Single(grants, grant => grant.Permission == permission);
+            Assert.Equal(EventHub.Application.Common.Ports.ActorKind.SystemAdministrator, grant.Actor);
+            Assert.Equal(EventHub.Application.Common.Ports.ScopeKind.Platform, grant.Scope);
+        }
+    }
+
+    /// <summary>
     /// Story 1.5: deactivation carries its permission, is granted only to the System actor in the System scope, and no
     /// endpoint dispatches it (no Api code outside the generated Mediator constructs the command; the contract has no
     /// deactivate operation).

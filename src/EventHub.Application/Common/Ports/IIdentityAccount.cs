@@ -7,8 +7,8 @@ namespace EventHub.Application.Common.Ports;
 /// <summary>
 /// The only way Application reads or changes credential state on a User (AD-26). The Infrastructure adapter runs
 /// the ASP.NET Identity stores in the Identity scope, each call on its own connection, outside the caller's
-/// transaction. Story 1.6 adds password reset by token; the password policy itself is Application's
-/// (<c>Auth.PasswordPolicy</c>), applied by the caller between the token check and the reset.
+/// transaction. Story 1.6 adds password reset by token, Story 1.7 the own password change; the password policy itself
+/// is Application's (<c>Auth.PasswordPolicy</c>), applied by the caller before the credential change.
 /// </summary>
 public interface IIdentityAccount
 {
@@ -53,6 +53,17 @@ public interface IIdentityAccount
     /// success carries the account's email.
     /// </summary>
     Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Changes a signed-in user's own password (FR36, AD-16) in one Identity-scope transaction. The current password is
+    /// checked against the stored hash by id, <b>without</b> counting failures or locking the account (the caller is
+    /// already authenticated; a typo must not lock them out of sign-in). A wrong current password (or none set) returns
+    /// null and changes nothing. Otherwise it stores the new password hash, rotates the security stamp (every session of
+    /// the user ends on its next request), clears any lockout, and returns the account with the new stamp, from which
+    /// the caller re-issues its own session cookie. The caller has already applied the password policy.
+    /// </summary>
+    Task<SessionAccount?> ChangePasswordAsync(
+        Guid userId, string currentPassword, string newPassword, CancellationToken cancellationToken = default);
 
 #if EVENTHUB_SEED_TOOLS
     /// <summary>

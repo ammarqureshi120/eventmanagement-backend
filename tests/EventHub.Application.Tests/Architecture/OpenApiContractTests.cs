@@ -44,7 +44,7 @@ public sealed class OpenApiContractTests
 
     /// <summary>
     /// Story 1.4 (additive only): login and logout under tag Auth, me under tag Me; the 1.1 operation stays. Story 1.6
-    /// adds forgot and reset password under tag Auth.
+    /// adds forgot and reset password under tag Auth; Story 1.7 adds the profile edit and password change under tag Me.
     /// </summary>
     [Theory]
     [InlineData("GET /api/auth/antiforgery", "GetAntiforgeryToken", "Auth")]
@@ -53,6 +53,8 @@ public sealed class OpenApiContractTests
     [InlineData("POST /api/auth/forgot-password", "ForgotPassword", "Auth")]
     [InlineData("POST /api/auth/reset-password", "ResetPassword", "Auth")]
     [InlineData("GET /api/me", "GetMe", "Me")]
+    [InlineData("PUT /api/me/profile", "UpdateMyProfile", "Me")]
+    [InlineData("POST /api/me/change-password", "ChangeMyPassword", "Me")]
     public void Operations_WhenRead_IncludeTheAuthAndMeOperations(string route, string operationId, string tag)
     {
         using var document = LoadDocument();
@@ -83,6 +85,18 @@ public sealed class OpenApiContractTests
         var schema = document.RootElement.GetProperty("components").GetProperty("schemas").GetProperty("ResetPasswordResponse");
         Assert.Equal("string", schema.GetProperty("properties").GetProperty("email").GetProperty("type").GetString());
         Assert.Contains("email", schema.GetProperty("required").EnumerateArray().Select(item => item.GetString()));
+    }
+
+    /// <summary>Story 1.7: both own-account commands answer 204 with no body.</summary>
+    [Theory]
+    [InlineData("/api/me/profile", "put")]
+    [InlineData("/api/me/change-password", "post")]
+    public void MyAccountOperations_WhenRead_Return204(string path, string method)
+    {
+        using var document = LoadDocument();
+        var responses = document.RootElement.GetProperty("paths").GetProperty(path).GetProperty(method).GetProperty("responses");
+
+        Assert.Equal(["204"], responses.EnumerateObject().Select(response => response.Name));
     }
 
     private static IEnumerable<(string Route, string? OperationId, int TagCount)> Operations(JsonDocument document)

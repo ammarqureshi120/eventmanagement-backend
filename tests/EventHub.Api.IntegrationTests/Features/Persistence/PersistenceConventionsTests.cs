@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EventHub.Api.IntegrationTests.Features.Persistence;
 
-/// <summary>AD-12 UTC converters and the AD-19 timestamp interceptor (no database needed).</summary>
+/// <summary>AD-12 UTC converters, the AD-19 timestamp interceptor and the AD-24 version interceptor (no database needed).</summary>
 public sealed class PersistenceConventionsTests
 {
     [Theory]
@@ -71,6 +71,49 @@ public sealed class PersistenceConventionsTests
         Assert.Equal(clock.UtcNow, widget.UpdatedAtUtc);
     }
 
+    [Fact]
+    public void VersionInterceptor_WhenModified_BumpsVersionOnce()
+    {
+        using var context = new WidgetContext();
+        var gadget = new Gadget { Id = 1, Name = "a", Version = 4 };
+        context.Attach(gadget);
+        gadget.Name = "b";
+
+        VersionInterceptor.Bump(context);
+
+        Assert.Equal(5, gadget.Version);
+        Assert.Equal(4, context.Entry(gadget).Property(g => g.Version).OriginalValue);
+    }
+
+    [Fact]
+    public void VersionInterceptor_WhenVersionIsAlreadyModified_DoesNotBumpAgain()
+    {
+        using var context = new WidgetContext();
+        var gadget = new Gadget { Id = 1, Name = "a", Version = 4 };
+        context.Attach(gadget);
+        gadget.Name = "b";
+        context.Entry(gadget).Property(g => g.Version).CurrentValue++; // as UserStore.UpdateAsync does
+
+        VersionInterceptor.Bump(context);
+
+        Assert.Equal(5, gadget.Version);
+    }
+
+    [Fact]
+    public void VersionInterceptor_WhenAddedOrUnchanged_LeavesVersionAlone()
+    {
+        using var context = new WidgetContext();
+        var unchanged = new Gadget { Id = 1, Name = "a", Version = 4 };
+        var added = new Gadget { Id = 2, Name = "n", Version = 1 };
+        context.Attach(unchanged);
+        context.Add(added);
+
+        VersionInterceptor.Bump(context);
+
+        Assert.Equal(4, unchanged.Version);
+        Assert.Equal(1, added.Version);
+    }
+
     private sealed class FixedClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; } = utcNow;
@@ -85,10 +128,24 @@ public sealed class PersistenceConventionsTests
         public DateTime UpdatedAtUtc { get; set; }
     }
 
+    private sealed class Gadget : IVersioned
+    {
+        public int Id { get; set; }
+
+        public string Name { get; set; } = string.Empty;
+
+        public int Version { get; set; }
+    }
+
     /// <summary>Change tracking only; never connects.</summary>
     private sealed class WidgetContext : DbContext
     {
         public DbSet<Widget> Widgets => Set<Widget>();
+
+        public DbSet<Gadget> Gadgets => Set<Gadget>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder) =>
+            modelBuilder.Entity<Gadget>().Property(gadget => gadget.Version).IsConcurrencyToken();
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
             optionsBuilder.UseSqlServer("Server=127.0.0.1,1;Database=none;Encrypt=False");

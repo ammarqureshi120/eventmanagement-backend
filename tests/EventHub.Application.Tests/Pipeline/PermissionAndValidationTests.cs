@@ -53,7 +53,7 @@ public sealed class PermissionAndValidationTests
     }
 
     [Fact]
-    public void ProductionGrants_WhenRead_AreExactlyTheStory14To16Cells_IncludingReLoginForSignedInCallers()
+    public void ProductionGrants_WhenRead_AreExactlyTheStory14To17Cells_IncludingReLoginForSignedInCallers()
     {
         var matrix = new PermissionMatrix([new AppPermissionGrants()]);
 
@@ -73,6 +73,8 @@ public sealed class PermissionAndValidationTests
                 new PermissionGrant(ActorKind.OrgAdministrator, AppPermissions.AuthResetPassword, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.EventManager, AppPermissions.AuthResetPassword, ScopeKind.Identity),
                 new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeGet, ScopeKind.Platform),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeEditProfile, ScopeKind.Platform),
+                new PermissionGrant(ActorKind.SystemAdministrator, AppPermissions.MeChangePassword, ScopeKind.Platform),
                 new PermissionGrant(ActorKind.System, AppPermissions.UsersDeactivate, ScopeKind.System),
             ],
             new AppPermissionGrants().Grants);
@@ -87,6 +89,11 @@ public sealed class PermissionAndValidationTests
         Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.MeGet, ScopeKind.None));
         Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.AuthLogout, ScopeKind.Identity));
         Assert.False(matrix.IsGranted(ActorKind.OrgAdministrator, AppPermissions.MeGet, ScopeKind.Tenant));
+        Assert.True(matrix.IsGranted(ActorKind.SystemAdministrator, AppPermissions.MeEditProfile, ScopeKind.Platform));
+        Assert.True(matrix.IsGranted(ActorKind.SystemAdministrator, AppPermissions.MeChangePassword, ScopeKind.Platform));
+        Assert.False(matrix.IsGranted(ActorKind.SystemAdministrator, AppPermissions.MeChangePassword, ScopeKind.Identity));
+        Assert.False(matrix.IsGranted(ActorKind.Anonymous, AppPermissions.MeEditProfile, ScopeKind.None));
+        Assert.False(matrix.IsGranted(ActorKind.OrgAdministrator, AppPermissions.MeEditProfile, ScopeKind.Tenant));
         Assert.Equal(
             [AppPermissions.AuthLogin, AppPermissions.AuthForgotPassword, AppPermissions.AuthResetPassword],
             new AppPermissionGrants().Grants.Where(grant => grant.Actor == ActorKind.Anonymous).Select(grant => grant.Permission));
