@@ -132,10 +132,73 @@
           }
         }
       }
+    },
+    "/api/me/profile": {
+      "put": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Edits the signed-in user's first name, last name and phone. A stale version is 409 concurrency_conflict.",
+        "operationId": "UpdateMyProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMyProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/me/change-password": {
+      "post": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Changes the signed-in user's password: this session stays signed in, every other session ends.",
+        "operationId": "ChangeMyPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeMyPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ChangeMyPasswordRequest": {
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string"
+          }
+        }
+      },
       "ForgotPasswordRequest": {
         "required": [
           "email"
@@ -271,6 +334,32 @@
         "properties": {
           "email": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateMyProfileRequest": {
+        "required": [
+          "firstName",
+          "lastName",
+          "phone",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         }
       },

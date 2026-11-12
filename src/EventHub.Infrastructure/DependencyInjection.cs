@@ -53,6 +53,7 @@ public static class DependencyInjection
         services.AddSingleton<DbScopeFactory>();
         services.AddScoped<TimestampsInterceptor>();
         services.AddScoped<RlsSessionContextInterceptor>();
+        services.AddSingleton<VersionInterceptor>();
 
         services.AddDbContext<AppDbContext>((sp, options) =>
         {
@@ -62,7 +63,8 @@ public static class DependencyInjection
             options.ConfigureWarnings(warnings => warnings.Ignore(CoreEventId.SaveChangesFailed, RelationalEventId.CommandError));
             options.AddInterceptors(
                 sp.GetRequiredService<RlsSessionContextInterceptor>(),
-                sp.GetRequiredService<TimestampsInterceptor>());
+                sp.GetRequiredService<TimestampsInterceptor>(),
+                sp.GetRequiredService<VersionInterceptor>());
         });
         services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 

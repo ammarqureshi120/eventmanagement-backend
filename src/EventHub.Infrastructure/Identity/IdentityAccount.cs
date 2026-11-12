@@ -16,7 +16,7 @@ namespace EventHub.Infrastructure.Identity;
 /// order it after their command (logout, deactivation) call it after the commit. Lockout (AD-16) uses the
 /// configured <see cref="LockoutOptions"/> and is timed by <see cref="IClock"/>. Password reset (Story 1.6) runs the
 /// token check, the single-use mark, the new hash, the stamp rotation and the lockout reset in one Identity-scope
-/// transaction.
+/// transaction; the own password change (Story 1.7) does the same after checking the current password instead.
 /// </summary>
 public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIdentityAccount
 {
@@ -164,6 +164,69 @@ public sealed class IdentityAccount(DbScopeFactory scopes, IClock clock) : IIden
 
         await transaction.CommitAsync(cancellationToken);
         return PasswordResetResult.Valid(Account(user, stamp), user.Email);
+    }
+
+    public async Task<SessionAccount?> ChangePasswordAsync(
+        Guid userId, string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(currentPassword);
+        ArgumentNullException.ThrowIfNull(newPassword);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await using var scope = scopes.OpenIdentity();
+        var users = scope.Services.GetRequiredService<UserManager<User>>();
+        var store = Store(scope);
+        var db = scope.Db;
+        await using var transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+
+        var user = await Find(store, userId, cancellationToken);
+        var stamp = NewSecurityStamp();
+        var disabled = false;
+        var wrongCurrent = false;
+
+        // The checks run inside the change, so a concurrency retry (row reloaded after a reset or deactivation committed
+        // in between) checks the fresh row again instead of overwriting it.
+        await UpdateAsync(scope, store, user, async () =>
+        {
+            if (user.Status != UserStatus.Active)
+            {
+                disabled = true;
+                return false;
+            }
+
+            // By id, with no failure count and no lockout check: the caller is signed in (Story 1.7 design note).
+            var hash = await store.GetPasswordHashAsync(user, cancellationToken);
+            if (hash is null)
+            {
+                users.PasswordHasher.VerifyHashedPassword(null!, DummyHash(users.PasswordHasher), currentPassword);
+                wrongCurrent = true;
+                return false;
+            }
+
+            if (users.PasswordHasher.VerifyHashedPassword(user, hash, currentPassword) == PasswordVerificationResult.Failed)
+            {
+                wrongCurrent = true;
+                return false;
+            }
+
+            await store.SetPasswordHashAsync(user, users.PasswordHasher.HashPassword(user, newPassword), cancellationToken);
+            await store.SetSecurityStampAsync(user, stamp, cancellationToken);
+            await ResetFailuresAsync(store, user, cancellationToken);
+            return true;
+        }, cancellationToken);
+
+        if (disabled)
+        {
+            throw new AccountDisabledException();
+        }
+
+        if (wrongCurrent)
+        {
+            return null;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return Account(user, stamp);
     }
 
 #if EVENTHUB_SEED_TOOLS

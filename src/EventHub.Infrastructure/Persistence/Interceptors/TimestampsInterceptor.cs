@@ -7,7 +7,7 @@ namespace EventHub.Infrastructure.Persistence.Interceptors;
 
 /// <summary>
 /// AD-19: stamps <see cref="ITimestamped"/> entities from <see cref="IClock"/> on SaveChanges.
-/// Stub until the first entity exists (Story 1.3); the aggregate Version bump (AD-24) joins in Story 1.7.
+/// The aggregate Version bump (AD-24) is <see cref="VersionInterceptor"/>.
 /// </summary>
 public sealed class TimestampsInterceptor(IClock clock) : SaveChangesInterceptor
 {

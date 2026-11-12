@@ -184,6 +184,10 @@ public sealed class DeactivationTests(LocalSqlFixture sql)
         public Task<PasswordResetResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
             inner.ResetPasswordAsync(token, newPassword, cancellationToken);
 
+        public Task<SessionAccount?> ChangePasswordAsync(
+            Guid userId, string currentPassword, string newPassword, CancellationToken cancellationToken = default) =>
+            inner.ChangePasswordAsync(userId, currentPassword, newPassword, cancellationToken);
+
         public Task SetPasswordForSeedAsync(Guid userId, string password, CancellationToken cancellationToken = default) =>
             inner.SetPasswordForSeedAsync(userId, password, cancellationToken);
     }

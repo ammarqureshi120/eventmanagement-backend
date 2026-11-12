@@ -7,7 +7,7 @@ namespace EventHub.Domain.Users;
 /// Credentials (password hash, security stamp, lockout) are not part of the Domain: they are EF shadow
 /// properties on the same <c>Users</c> row, touched only by the Identity stores behind <c>IIdentityAccount</c>.
 /// </summary>
-public sealed class User : IHasDomainEvents, ITimestamped
+public sealed class User : IHasDomainEvents, ITimestamped, IVersioned
 {
     public const int NameMaxLength = 100;
     public const int EmailMaxLength = 256;
@@ -115,12 +115,62 @@ public sealed class User : IHasDomainEvents, ITimestamped
         _domainEvents.Add(new UserDeactivated(Id, Role, OrganizationId));
     }
 
+    /// <summary>
+    /// FR36: edits the user's own first name, last name and phone, nothing else (email, role, status and Organization
+    /// never change here). Names are trimmed, required and at most <see cref="NameMaxLength"/> characters; a blank
+    /// phone becomes null, otherwise it is trimmed and must pass <see cref="IsValidPhone"/>. Raises
+    /// <see cref="UserProfileEdited"/> and returns true only when a value actually changed; the persistence
+    /// interceptor bumps <see cref="Version"/> on save (AD-24).
+    /// </summary>
+    public bool EditProfile(string? firstName, string? lastName, string? phone)
+    {
+        var newFirstName = RequiredName(firstName, nameof(firstName));
+        var newLastName = RequiredName(lastName, nameof(lastName));
+        var newPhone = NormalizePhone(phone);
+        if (newPhone is not null && !IsValidPhone(newPhone))
+        {
+            throw new ArgumentException("A phone number has only digits, spaces and + ( ) - . characters.", nameof(phone));
+        }
+
+        if (string.Equals(FirstName, newFirstName, StringComparison.Ordinal)
+            && string.Equals(LastName, newLastName, StringComparison.Ordinal)
+            && string.Equals(Phone, newPhone, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        FirstName = newFirstName;
+        LastName = newLastName;
+        Phone = newPhone;
+        _domainEvents.Add(new UserProfileEdited(Id, Role, OrganizationId));
+        return true;
+    }
+
+    /// <summary>A trimmed phone, or null when it is null or blank.</summary>
+    public static string? NormalizePhone(string? phone) =>
+        string.IsNullOrWhiteSpace(phone) ? null : phone.Trim();
+
+    /// <summary>
+    /// The phone shape (FR36): at most <see cref="PhoneMaxLength"/> characters of ASCII digits, spaces and
+    /// <c>+ ( ) - .</c>, with at least one digit. Pass the normalized (trimmed) value.
+    /// </summary>
+    public static bool IsValidPhone(string? phone) =>
+        phone is { Length: > 0 and <= PhoneMaxLength }
+        && phone.All(c => char.IsAsciiDigit(c) || c is ' ' or '+' or '(' or ')' or '-' or '.')
+        && phone.Any(char.IsAsciiDigit);
+
     public void ClearDomainEvents() => _domainEvents.Clear();
 
     private static string RequireEmail(string email) =>
         IsValidEmail(email)
             ? email.Trim()
             : throw new ArgumentException("A valid email address is required.", nameof(email));
+
+    private static string RequiredName(string? value, string parameterName)
+    {
+        var trimmed = Name(value, parameterName);
+        return trimmed.Length > 0 ? trimmed : throw new ArgumentException("A name is required.", parameterName);
+    }
 
     private static string Name(string? value, string parameterName)
     {

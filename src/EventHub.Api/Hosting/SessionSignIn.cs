@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using EventHub.Application.Common.Ports;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -9,7 +10,7 @@ namespace EventHub.Api.Hosting;
 /// AD-16 adapter for the Application port <see cref="ISessionSignIn"/>. Both calls only stage <c>Set-Cookie</c>
 /// headers; the response starts after the pipeline (and its transaction) returns.
 /// <list type="bullet">
-/// <item>Sign-in: if the command fails afterwards, the exception handler's <c>Response.Clear()</c> drops the staged
+/// <item>Sign-in and refresh: if the command fails afterwards, the exception handler's <c>Response.Clear()</c> drops the staged
 /// cookie, so a session is only ever issued for a committed sign-in.</item>
 /// <item>Sign-out: the deletion must survive an error after it (stamp rotation failing → 500), so it is re-applied
 /// from an <c>OnStarting</c> callback whenever <c>Response.Clear()</c> removed it.</item>
@@ -25,6 +26,25 @@ public sealed class SessionSignIn(
         ArgumentNullException.ThrowIfNull(account);
         var context = Context();
         var principal = SessionPrincipal.Create(account, SessionPrincipal.IssuedAt(clock.UtcNow));
+        await context.SignInAsync(AuthSetup.Scheme, principal, new AuthenticationProperties { IsPersistent = false });
+    }
+
+    public async Task RefreshSignInAsync(SessionAccount account, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        var context = Context();
+        var current = context.User;
+        var issuedAt = current.FindFirstValue(SessionClaims.IssuedAt);
+        if (current.Identity is not { IsAuthenticated: true }
+            || SessionPrincipal.IssuedAtUtc(issuedAt) is null
+            || !Guid.TryParse(current.FindFirstValue(SessionClaims.Subject), out var userId)
+            || userId != account.UserId)
+        {
+            throw new InvalidOperationException("Refreshing a session needs the signed-in caller's own session.");
+        }
+
+        // Same iat: the absolute limit keeps counting from the original sign-in; the idle window starts again.
+        var principal = SessionPrincipal.Create(account, issuedAt!);
         await context.SignInAsync(AuthSetup.Scheme, principal, new AuthenticationProperties { IsPersistent = false });
     }
 

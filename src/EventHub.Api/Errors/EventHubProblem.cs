@@ -25,6 +25,7 @@ public static class EventHubProblem
         public const string TokenInvalid = "token_invalid";
         public const string Forbidden = "forbidden";
         public const string NotFound = "not_found";
+        public const string ConcurrencyConflict = "concurrency_conflict";
         public const string ServerError = "server_error";
     }
 
@@ -93,6 +94,7 @@ public static class EventHubProblem
         Codes.TokenInvalid => "This reset link has expired.",
         Codes.Forbidden => "You don't have access to do that.",
         Codes.NotFound => "We couldn't find that.",
+        Codes.ConcurrencyConflict => "Someone else changed this. Reload to see the latest.",
         _ => "Something went wrong on our side. Please try again.",
     };
 }
