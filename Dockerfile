@@ -19,7 +19,7 @@ COPY src/ src/
 RUN dotnet publish src/EventHub.Api/EventHub.Api.csproj -c Release -o /app/publish --no-restore \
     -p:OpenApiGenerateDocuments=false -p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \
