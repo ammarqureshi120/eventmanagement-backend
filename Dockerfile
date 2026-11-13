@@ -2,7 +2,7 @@
 # Future hosting only: local dev and CI never build or run containers.
 # Runtime = aspnet:10.0 (non-chiseled) with tzdata + ICU so IANA zones and culture data work (AD-12).
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 COPY global.json Directory.Build.props Directory.Packages.props EventHub.slnx ./
